@@ -391,3 +391,34 @@ describe('machine principals (ЄДЕБО / HR sync)', () => {
     expect(engine.evaluate(human, Action.SYNC_INGEST, integration, env()).reason).toBe('principal.kind_mismatch');
   });
 });
+
+describe('own-account resources (Phase 3: devices, keys, presence)', () => {
+  const self = (ownerId: string) => ({ type: ResourceType.SELF, tenantId: T_MAIN, ownerId });
+  const device = (ownerId: string) => ({ type: ResourceType.DEVICE, id: 'dev-1', tenantId: T_MAIN, ownerId });
+
+  it('a user manages their own devices and presence', () => {
+    const s = student();
+    expect(engine.can(s, Action.DEVICE_MANAGE, device(s.userId), env())).toBe(true);
+    expect(engine.can(s, Action.PRESENCE_UPDATE, self(s.userId), env())).toBe(true);
+    expect(engine.can(s, Action.CHANNEL_LIST, self(s.userId), env())).toBe(true);
+  });
+
+  it("IDOR: nobody can upload keys to or read the inbox of another user's device", () => {
+    const s = student();
+    expect(engine.evaluate(s, Action.DEVICE_MANAGE, device('u-lecturer'), env()).reason).toBe('ownership.required');
+    expect(engine.evaluate(superAdmin(), Action.DEVICE_MANAGE, device(s.userId), env()).reason).toBe(
+      'ownership.required',
+    );
+  });
+
+  it('a self resource without a resolved owner is denied (fail-closed)', () => {
+    expect(engine.evaluate(student(), Action.CHANNEL_LIST, { type: ResourceType.SELF, tenantId: T_MAIN }, env()).reason).toBe(
+      'ownership.required',
+    );
+  });
+
+  it('only lecturers and staff manage quiet hours', () => {
+    expect(engine.can(lecturer(), Action.QUIET_HOURS_MANAGE, self('u-lecturer'), env())).toBe(true);
+    expect(engine.can(student(), Action.QUIET_HOURS_MANAGE, self('u-student'), env())).toBe(false);
+  });
+});

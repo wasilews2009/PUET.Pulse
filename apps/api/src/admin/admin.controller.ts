@@ -21,6 +21,7 @@ import {
   roleGrantInput,
   simulateInput,
 } from './admin.schemas';
+import { ProvisioningService } from '../provisioning/provisioning.service';
 import { PoliciesService } from './policies.service';
 import { RolesService } from './roles.service';
 import { StructureService, type Actor } from './structure.service';
@@ -48,6 +49,7 @@ export class AdminController {
     @Inject(RolesService) private readonly roles: RolesService,
     @Inject(PoliciesService) private readonly policies: PoliciesService,
     @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(ProvisioningService) private readonly provisioning: ProvisioningService,
   ) {}
 
   // ── Tenants & structure ──────────────────────────────────────────
@@ -112,6 +114,14 @@ export class AdminController {
   @Authorize(Action.STRUCTURE_MANAGE, STRUCTURE)
   graduate(@Req() req: AuthenticatedRequest, @Param('groupId', ParseUUIDPipe) groupId: string) {
     return this.structure.graduateGroup(actor(req), tenant(req), groupId);
+  }
+
+  /** Re-derive channels and memberships from the structure (also runs after every sync). */
+  @Post('tenants/:tenantId/channels/provision')
+  @HttpCode(200)
+  @Authorize(Action.STRUCTURE_MANAGE, STRUCTURE)
+  provision(@Req() req: AuthenticatedRequest) {
+    return this.provisioning.reconcileTenant(tenant(req), req.principal!.userId);
   }
 
   // ── Roles ────────────────────────────────────────────────────────

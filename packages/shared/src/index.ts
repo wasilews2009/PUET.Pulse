@@ -153,6 +153,12 @@ export const Action = {
   QUIET_HOURS_MANAGE: 'quiet_hours.manage',
   SESSION_READ: 'session.read',
   SYNC_INGEST: 'sync.ingest',
+  /** Phase 3: the caller's own channel list, presence, devices and E2EE keys. */
+  CHANNEL_LIST: 'channel.list',
+  PRESENCE_UPDATE: 'presence.update',
+  DEVICE_MANAGE: 'device.manage',
+  /** Query / claim other users' public device keys and send them to-device envelopes. */
+  E2EE_KEYS_ACCESS: 'e2ee.keys.access',
 } as const;
 export type Action = (typeof Action)[keyof typeof Action];
 
@@ -171,6 +177,9 @@ export const ResourceType = {
   CERTIFICATE: 'certificate',
   SESSION: 'session',
   INTEGRATION: 'integration',
+  /** The caller's own account settings (always owned by the caller). */
+  SELF: 'self',
+  DEVICE: 'device',
 } as const;
 
 /** Roles the ЄДЕБО / HR sync may grant. RECTORATE and SUPER_ADMIN are granted only by an administrator. */

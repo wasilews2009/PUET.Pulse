@@ -259,6 +259,11 @@ export class PolicyEngine {
       return deny('principal.kind_mismatch');
     }
 
+    // Own-account resources (settings, devices, key backup) belong to exactly one user.
+    if (resource.type === ResourceType.SELF || resource.type === ResourceType.DEVICE) {
+      if (!resource.ownerId || resource.ownerId !== principal.userId) return deny('ownership.required');
+    }
+
     // Guests: complete isolation from the internal directory and service chats.
     if (principal.kind === PrincipalKind.GUEST) {
       if (

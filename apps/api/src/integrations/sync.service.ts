@@ -3,6 +3,7 @@ import type { Prisma, RoleCode as DbRoleCode } from '@puet/database';
 import { RoleCode } from '@puet/shared';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { REALTIME_BUS, type RealtimeBus } from '../realtime/realtime.bus';
 import { SESSION_STORE, type SessionStore } from '../session/session.store';
 import { computeIsMinor, type Offboarding, type StaffRecord, type StudentRecord, type TeachingLoad } from './schemas';
 
@@ -34,6 +35,7 @@ export class SyncService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(SESSION_STORE) private readonly sessions: SessionStore,
+    @Inject(REALTIME_BUS) private readonly bus: RealtimeBus,
   ) {}
 
   async syncStudents(tenantId: string, records: StudentRecord[], actorId: string): Promise<SyncResult> {
@@ -182,11 +184,16 @@ export class SyncService {
         data: { status: 'REVOKED', revokedAt: now, revocationReason: 'AFFILIATION_CHANGED' },
       });
       await tx.roleAssignment.deleteMany({ where: { userId, source: 'SYNC' } });
+      // E2EE devices stop receiving keys; their one-time keys and pending envelopes go away.
+      await tx.device.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: now, keysUpdatedAt: now } });
+      await tx.deviceOneTimeKey.deleteMany({ where: { device: { userId } } });
+      await tx.toDeviceMessage.deleteMany({ where: { recipient: { userId } } });
       return current;
     });
     if (!user) return false;
 
     await this.sessions.destroyAllForUser(userId);
+    await this.bus.disconnectUsers([userId]);
     await this.audit.record({
       actorId,
       tenantId: user.tenantId,

@@ -14,14 +14,18 @@ before writing code. When a rule here conflicts with convenience, the rule wins.
 
 1. **No custom cryptography.** Never write your own encryption, hashing, key
    derivation, signature, random number or padding scheme. Use only audited
-   libraries: `@signalapp/libsignal-client`, `vodozemac` / `olm`, WebCrypto,
+   libraries: `vodozemac` (via `@matrix-org/matrix-sdk-crypto-wasm`), WebCrypto,
    Node `crypto` primitives (SHA-256 / HMAC / CSPRNG only), PKI.js / node-forge
    for X.509 encoding, certified Ukrainian providers for КЕП.
-2. **E2EE messaging.** Signal Protocol (Double Ratchet) for 1-on-1, Olm/Megolm
-   (vodozemac) for group rooms. AES-256-GCM, X25519. Device verification by QR,
-   encrypted key backup under a master passphrase. The server stores only
-   ciphertext (`messages.ciphertext`) and public keys. A DB trigger rejects
-   plaintext bodies in `MANDATORY` E2EE channels.
+2. **E2EE messaging.** vodozemac everywhere (owner decision, Phase 3): Olm
+   (Double Ratchet) between devices and Megolm for room messages, 1-on-1 and
+   groups alike, through `packages/e2ee` (`PulseCrypto`, wrapping the official
+   `@matrix-org/matrix-sdk-crypto-wasm` OlmMachine). libsignal was dropped
+   because it has no browser build. Device verification by QR (cross-signing),
+   key backup (`m.megolm_backup.v1`) whose key is wrapped under a master
+   passphrase with WebCrypto PBKDF2-SHA-256 (600k) + AES-256-GCM. The server
+   stores only ciphertext (`messages.ciphertext`) and public keys. DB triggers:
+   `MANDATORY` channels reject plaintext, `DISABLED` channels reject ciphertext.
 3. **Ukrainian QES (КЕП) and internal PKI.** Never validate ДСТУ 4145-2002 /
    ДСТУ 7564:2014 / CAdES-X Long with raw OpenSSL or Node `crypto`. All signing
    goes through the `SignatureProvider` interface (Phase 4):
@@ -69,7 +73,7 @@ before writing code. When a rule here conflicts with convenience, the rule wins.
 | Monorepo | pnpm workspaces + Turborepo |
 | Backend | Node.js 22, NestJS 11, TypeScript (strict) |
 | Data | PostgreSQL 16 (Prisma 6), Redis 7, MinIO (S3, SSE), ClamAV |
-| Real-time | WebSockets (Socket.io or Centrifugo), WebRTC (LiveKit / mediasoup) |
+| Real-time | WebSockets (Socket.io, Redis pub/sub fan-out), WebRTC (LiveKit / mediasoup) |
 | Frontend | React 19, TypeScript, Tailwind CSS, PDF.js Secure Viewer, PWA + desktop wrapper |
 | Auth | OIDC / SAML 2.0 (Keycloak, AD, LDAP), TOTP / WebAuthn |
 | Tests | Vitest |
@@ -85,9 +89,15 @@ apps/
     src/integrations/  HMAC webhooks, zod schemas, sync + offboarding
     src/admin/         No-Code Admin Panel API
     src/audit/         hash-chained audit log
+    src/messaging/     channels, messages, threads, DMs, presence, Quiet Hours API
+    src/realtime/      Socket.io gateway (/ws) and Redis realtime bus
+    src/notifications/ Quiet Hours decisions, Redis digest store
+    src/provisioning/  channel auto-provisioning, background jobs
+    src/e2ee/          Matrix-compatible key directory, to-device, key backup
 packages/
   shared/              Domain vocabulary: tenants, roles, actions, channel types
   policy-engine/       Pure RBAC + ABAC policy decision point (no I/O)
+  e2ee/                Client E2EE layer (vodozemac Olm/Megolm, backup, QR)
   database/            Prisma schema, migrations, seed (PUET structure)
 infra/                 Postgres init, MinIO bucket bootstrap
 assets/brand/          PUET logos (official SVG vectors, .ai source, raster originals)
@@ -133,6 +143,13 @@ the same rules. Evaluation order, first deny wins, default deny:
 - Global guards: `AuthenticationGuard`, then `PolicyGuard`. Every handler must
   have `@Authorize(action, { type, idField })` or `@Public()`. An unannotated
   handler is denied (fail-closed). Do not disable or reorder these guards.
+- Global `APP_GUARD`s do **not** run for WebSocket gateways. Every gateway must
+  carry `@UseGuards(AuthenticationGuard, PolicyGuard)` and every
+  `@SubscribeMessage` handler an `@Authorize` (a test checks this). The WS
+  handshake checks `Origin` (CSWSH) and the session cookie; sessions are
+  re-validated every 60 s and offboarding disconnects sockets.
+- Realtime events are addressed per user and recipients are re-resolved from
+  current memberships for every event; payloads carry ids and ciphertext only.
 - Resource ids come from route params / query (HTTP) or the event payload (WS),
   are validated as UUIDs, and are resolved server-side by a `ResourceResolver`
   that computes membership for the caller. Never trust tenant, owner or
@@ -166,6 +183,21 @@ the same rules. Evaluation order, first deny wins, default deny:
   before/after values.
 - After deploying a version that adds actions, run `pnpm db:seed` (idempotent):
   it adds the new default permissions to `role_permissions`.
+
+**Messaging rules (Phase 3)**
+
+- Provisioning (`provisionKey` channels for groups, courses, departments,
+  institutes, dormitories, org units, emergency) owns only `AUTO` memberships
+  and never touches `MANUAL` ones. It runs per tenant under an advisory lock
+  after every sync batch. E2EE mode may only be raised to `MANDATORY`.
+- Course channels require threads (only owners / moderators post top-level) and
+  archive at semester end.
+- Notifications obey Quiet Hours, Do Not Disturb, «На парі» and mute; Civil
+  Protection / `EMERGENCY` messages bypass all of them. Held notifications go
+  to a Redis morning digest; jobs run on one leader (Redis lock).
+- Key directory zero trust: a user sees keys of self and of active users who
+  share a non-`DISABLED` channel; everything else is silently dropped. Keys of
+  a device never change once uploaded; removing a member rotates room keys.
 
 ## 5. Organizational topology and data model
 
@@ -237,8 +269,10 @@ section apply only to marketing pages, not to the messenger app.
   load, offboarding), No-Code Admin Panel API (structure, bulk promotion,
   graduation to alumni, roles, permission matrix, ABAC policies, simulator,
   audit log and chain verification). The visual panel is part of Phase 5.
-- **Phase 3:** real-time messaging, channel auto-provisioning, Quiet Hours
-  scheduler (Redis), E2EE key exchange and encryption layer.
+- **Phase 3 (done):** real-time messaging (Socket.io + Redis), channel
+  auto-provisioning, threads, DMs and groups, presence, Quiet Hours with
+  morning digest (Redis), TTL purge, E2EE key directory and the vodozemac
+  client layer (Olm/Megolm, key backup, QR verification).
 - **Phase 4:** Secure PDF Viewer (CDR, watermarks, JSON annotations), Internal
   PKI + External QES, multi-step approval routes, verification protocol with QR.
 - **Phase 5:** React frontend with PUET tokens, Light / Dark, UA / EN, plus

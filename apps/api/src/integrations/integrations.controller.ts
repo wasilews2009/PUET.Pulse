@@ -1,10 +1,11 @@
-import { BadRequestException, Body, Controller, ForbiddenException, HttpCode, Inject, Post, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, HttpCode, Inject, Logger, Post, Req } from '@nestjs/common';
 import type { IntegrationKind, Prisma } from '@puet/database';
 import { Action, ResourceType } from '@puet/shared';
 import type { ZodType, ZodTypeDef } from 'zod';
 import { Authorize } from '../authz/authorize.decorator';
 import { parse } from '../common/validation';
 import { PrismaService } from '../prisma/prisma.service';
+import { ProvisioningService } from '../provisioning/provisioning.service';
 import { IDEMPOTENCY_HEADER } from './hmac';
 import type { IntegrationRequest } from './integration-auth.middleware';
 import { offboarding, staffBatch, studentBatch, teachingLoad } from './schemas';
@@ -23,6 +24,7 @@ export class IntegrationsController {
   constructor(
     @Inject(SyncService) private readonly sync: SyncService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(ProvisioningService) private readonly provisioning: ProvisioningService,
   ) {}
 
   @Post('edebo/students')
@@ -91,6 +93,13 @@ export class IntegrationsController {
         summary: result as unknown as Prisma.InputJsonValue,
       },
     });
-    return { replayed: false, ...result };
+    // Channels and memberships follow the directory right away.
+    let channels: unknown = null;
+    try {
+      channels = await this.provisioning.reconcileTenant(tenantId, client.id);
+    } catch (err) {
+      new Logger(IntegrationsController.name).error('Channel provisioning failed after sync', err as Error);
+    }
+    return { replayed: false, ...result, channels };
   }
 }

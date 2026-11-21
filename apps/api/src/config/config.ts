@@ -44,6 +44,13 @@ const schema = z.object({
   /** JSON object: { "<clientId>": { id, secret, tenantCode, kinds } }. */
   INTEGRATION_CLIENTS: z.string().default('{}'),
   INTEGRATION_CLOCK_TOLERANCE_SECONDS: z.coerce.number().int().min(30).max(900).default(300),
+  /** Server name used in E2EE identifiers (@<user uuid>:<name>, !<channel uuid>:<name>). */
+  E2EE_SERVER_NAME: z
+    .string()
+    .regex(/^[a-z0-9.-]{1,253}$/)
+    .default('pulse.puet.edu.ua'),
+  /** Background jobs (digests, TTL purge, course archive). Disable on read-only replicas. */
+  JOBS_ENABLED: z.enum(['true', 'false']).default('true'),
 });
 
 export interface AppConfig {
@@ -62,6 +69,8 @@ export interface AppConfig {
   };
   session: { absoluteMs: number; idleMs: number };
   integrations: { clients: Map<string, IntegrationClientConfig>; toleranceSeconds: number };
+  e2ee: { serverName: string };
+  jobsEnabled: boolean;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -100,5 +109,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       clients: new Map(Object.entries(clients.data).map(([clientId, c]) => [clientId, { ...c, clientId }])),
       toleranceSeconds: e.INTEGRATION_CLOCK_TOLERANCE_SECONDS,
     },
+    e2ee: { serverName: e.E2EE_SERVER_NAME },
+    jobsEnabled: e.JOBS_ENABLED === 'true',
   };
 }

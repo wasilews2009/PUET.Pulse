@@ -12,15 +12,32 @@ import { AuthenticationGuard } from './auth/authentication.guard';
 import { OIDC_PROVIDER, OpenIdClientProvider } from './auth/oidc.service';
 import { PrincipalFactory } from './auth/principal.factory';
 import { PolicyGuard } from './authz/policy.guard';
-import { ChannelScopedResolver, TenantResourceResolver, UserTargetResolver } from './authz/prisma-resolvers';
+import {
+  ChannelScopedResolver,
+  DeviceResolver,
+  SelfResolver,
+  TenantResourceResolver,
+  UserTargetResolver,
+} from './authz/prisma-resolvers';
 import { RESOURCE_RESOLVERS } from './authz/resource-resolver';
 import { ChannelsController } from './channels/channels.controller';
 import { APP_CONFIG, loadConfig, type AppConfig } from './config/config';
+import { E2eeController } from './e2ee/e2ee.controller';
+import { E2eeService } from './e2ee/e2ee.service';
 import { HealthController } from './health/health.controller';
 import { IntegrationAuthMiddleware } from './integrations/integration-auth.middleware';
 import { IntegrationsController } from './integrations/integrations.controller';
 import { SyncService } from './integrations/sync.service';
+import { MessagingController } from './messaging/messaging.controller';
+import { MessagingService } from './messaging/messaging.service';
+import { ProfileController } from './messaging/profile.controller';
+import { DIGEST_STORE, RedisDigestStore } from './notifications/digest.store';
+import { NotificationService } from './notifications/notification.service';
 import { POLICY_STORE, PolicyService, PrismaPolicyStore } from './policy/policy.service';
+import { JobsService } from './provisioning/jobs.service';
+import { ProvisioningService } from './provisioning/provisioning.service';
+import { REALTIME_BUS, RedisRealtimeBus } from './realtime/realtime.bus';
+import { RealtimeGateway } from './realtime/realtime.gateway';
 import { PrismaService } from './prisma/prisma.service';
 import { SessionAuthService } from './session/session-auth.service';
 import { SessionMiddleware } from './session/session.middleware';
@@ -29,7 +46,16 @@ import { RedisSessionStore, SESSION_STORE } from './session/session.store';
 export const REDIS = Symbol('REDIS');
 
 @Module({
-  controllers: [HealthController, AuthController, ChannelsController, IntegrationsController, AdminController],
+  controllers: [
+    HealthController,
+    AuthController,
+    ChannelsController,
+    MessagingController,
+    ProfileController,
+    E2eeController,
+    IntegrationsController,
+    AdminController,
+  ],
   providers: [
     { provide: APP_CONFIG, useFactory: () => loadConfig() },
     {
@@ -39,6 +65,14 @@ export const REDIS = Symbol('REDIS');
     },
     { provide: SESSION_STORE, inject: [REDIS], useFactory: (redis: Redis) => new RedisSessionStore(redis) },
     { provide: OIDC_PROVIDER, useClass: OpenIdClientProvider },
+    { provide: REALTIME_BUS, inject: [REDIS], useFactory: (redis: Redis) => new RedisRealtimeBus(redis) },
+    { provide: DIGEST_STORE, inject: [REDIS], useFactory: (redis: Redis) => new RedisDigestStore(redis) },
+    MessagingService,
+    NotificationService,
+    ProvisioningService,
+    JobsService,
+    E2eeService,
+    RealtimeGateway,
     PrismaService,
     AuditService,
     PrincipalFactory,
@@ -53,10 +87,12 @@ export const REDIS = Symbol('REDIS');
     ChannelScopedResolver,
     UserTargetResolver,
     TenantResourceResolver,
+    SelfResolver,
+    DeviceResolver,
     {
       provide: RESOURCE_RESOLVERS,
       useFactory: (...resolvers: unknown[]) => resolvers,
-      inject: [ChannelScopedResolver, UserTargetResolver, TenantResourceResolver],
+      inject: [ChannelScopedResolver, UserTargetResolver, TenantResourceResolver, SelfResolver, DeviceResolver],
     },
     // Order matters: authenticate first, then authorize. Both apply to every route.
     { provide: APP_GUARD, useClass: AuthenticationGuard },

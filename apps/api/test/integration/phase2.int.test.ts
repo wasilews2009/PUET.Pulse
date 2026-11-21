@@ -15,6 +15,8 @@ import { AppModule, REDIS } from '../../src/app.module';
 import { OIDC_PROVIDER, type IdTokenClaims, type OidcProvider } from '../../src/auth/oidc.service';
 import { APP_CONFIG, loadConfig } from '../../src/config/config';
 import { sign } from '../../src/integrations/hmac';
+import { DIGEST_STORE, MemoryDigestStore } from '../../src/notifications/digest.store';
+import { MemoryRealtimeBus, REALTIME_BUS } from '../../src/realtime/realtime.bus';
 import { MemorySessionStore, SESSION_STORE } from '../../src/session/session.store';
 
 const enabled = process.env.RUN_DB_TESTS === '1' && !!process.env.DATABASE_URL;
@@ -88,6 +90,7 @@ describe.skipIf(!enabled)('Phase 2 end-to-end (PostgreSQL)', () => {
       OIDC_CLIENT_SECRET: 'secret',
       OIDC_REDIRECT_URI: `${WEB}/api/auth/callback`,
       INTEGRATION_CLIENTS: JSON.stringify(clients),
+      JOBS_ENABLED: 'false',
     });
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(APP_CONFIG)
@@ -98,6 +101,10 @@ describe.skipIf(!enabled)('Phase 2 end-to-end (PostgreSQL)', () => {
       .useValue(new MemorySessionStore())
       .overrideProvider(OIDC_PROVIDER)
       .useValue(fakeOidc)
+      .overrideProvider(REALTIME_BUS)
+      .useValue(new MemoryRealtimeBus())
+      .overrideProvider(DIGEST_STORE)
+      .useValue(new MemoryDigestStore())
       .compile();
     app = moduleRef.createNestApplication({ rawBody: true, logger: ['error'] });
     await app.listen(0);

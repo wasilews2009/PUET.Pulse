@@ -137,6 +137,19 @@ enum ChannelType {
   ANNOUNCEMENT
 }
 
+/// Who owns a channel membership: AUTO rows are reconciled by channel provisioning.
+enum MembershipSource {
+  AUTO
+  MANUAL
+}
+
+/// How a message is stored. NONE = plaintext `body`; others = opaque `ciphertext`.
+enum EncryptionScheme {
+  NONE
+  MEGOLM
+  OLM
+}
+
 enum E2eeMode {
   MANDATORY
   OPTIONAL
@@ -464,47 +477,52 @@ model CourseOfferingGroup {
 // ───────────────────────────── People ─────────────────────────────
 
 model User {
-  id           String         @id @default(uuid()) @db.Uuid
-  tenantId     String         @map("tenant_id") @db.Uuid
+  id            String         @id @default(uuid()) @db.Uuid
+  tenantId      String         @map("tenant_id") @db.Uuid
   /// Corporate ID used for communication and DLP watermarks.
-  corporateId  String         @unique @map("corporate_id")
-  kind         PrincipalKind
-  status       AccountStatus  @default(ACTIVE)
-  fullNameUk   String         @map("full_name_uk")
-  fullNameEn   String?        @map("full_name_en")
-  email        String         @unique
+  corporateId   String         @unique @map("corporate_id")
+  kind          PrincipalKind
+  status        AccountStatus  @default(ACTIVE)
+  fullNameUk    String         @map("full_name_uk")
+  fullNameEn    String?        @map("full_name_en")
+  email         String         @unique
   /// Personal phone: hidden by default, readable only by self and HR (policy engine).
-  phone        String?
-  birthDate    DateTime?      @map("birth_date") @db.Date
+  phone         String?
+  birthDate     DateTime?      @map("birth_date") @db.Date
   /// Denormalized from birth date / tenant by the sync job; drives minor protection.
-  isMinor      Boolean        @default(false) @map("is_minor")
-  locale       Locale         @default(uk)
-  presence     PresenceStatus @default(OFFLINE)
+  isMinor       Boolean        @default(false) @map("is_minor")
+  locale        Locale         @default(uk)
+  presence      PresenceStatus @default(OFFLINE)
+  /// Optional end of a manual status («На парі», «Не турбувати»); null = until changed.
+  presenceUntil DateTime?      @map("presence_until")
   /// OIDC `sub` from Keycloak / AD (Phase 2).
-  oidcSubject  String?        @unique @map("oidc_subject")
-  edeboId      String?        @unique @map("edebo_id")
-  hrId         String?        @unique @map("hr_id")
-  mfaEnforced  Boolean        @default(false) @map("mfa_enforced")
+  oidcSubject   String?        @unique @map("oidc_subject")
+  edeboId       String?        @unique @map("edebo_id")
+  hrId          String?        @unique @map("hr_id")
+  mfaEnforced   Boolean        @default(false) @map("mfa_enforced")
   /// Incremented on offboarding to invalidate every issued session token at once.
-  sessionEpoch Int            @default(0) @map("session_epoch")
-  offboardedAt DateTime?      @map("offboarded_at")
+  sessionEpoch  Int            @default(0) @map("session_epoch")
+  offboardedAt  DateTime?      @map("offboarded_at")
   /// Graduates migrated to the Alumni Association contour.
-  isAlumni     Boolean        @default(false) @map("is_alumni")
-  createdAt    DateTime       @default(now()) @map("created_at")
-  updatedAt    DateTime       @updatedAt @map("updated_at")
+  isAlumni      Boolean        @default(false) @map("is_alumni")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
 
-  tenant          Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  staffProfile    StaffProfile?
-  studentProfile  StudentProfile?
-  roleAssignments RoleAssignment[]    @relation("RoleAssignee")
-  grantedRoles    RoleAssignment[]    @relation("RoleGrantor")
-  memberships     ChannelMember[]
-  messages        Message[]
-  files           FileObject[]
-  quietHours      QuietHoursSchedule?
-  certificates    UserCertificate[]
-  approvalSteps   ApprovalStep[]
-  devices         Device[]
+  tenant           Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  staffProfile     StaffProfile?
+  studentProfile   StudentProfile?
+  roleAssignments  RoleAssignment[]    @relation("RoleAssignee")
+  grantedRoles     RoleAssignment[]    @relation("RoleGrantor")
+  memberships      ChannelMember[]
+  messages         Message[]
+  files            FileObject[]
+  quietHours       QuietHoursSchedule?
+  certificates     UserCertificate[]
+  approvalSteps    ApprovalStep[]
+  devices          Device[]
+  crossSigningKeys CrossSigningKey[]
+  keyBackups       KeyBackupVersion[]
+  secrets          UserSecret[]
 
   @@index([tenantId, status])
   @@index([tenantId, kind])
@@ -582,20 +600,120 @@ model StudentProfile {
 }
 
 model Device {
-  id          String    @id @default(uuid()) @db.Uuid
-  userId      String    @map("user_id") @db.Uuid
-  label       String
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  label         String
   /// Public identity key for E2EE (Phase 3). Private keys never reach the server.
-  identityKey Bytes?    @map("identity_key")
-  verifiedAt  DateTime? @map("verified_at")
-  lastSeenAt  DateTime? @map("last_seen_at")
-  revokedAt   DateTime? @map("revoked_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
+  identityKey   Bytes?    @map("identity_key")
+  /// Signed device keys object (Curve25519 + Ed25519 public keys) exactly as the
+  /// client uploaded it. Signatures are verified by the clients, not the server.
+  deviceKeys    Json?     @map("device_keys")
+  keysUpdatedAt DateTime? @map("keys_updated_at")
+  verifiedAt    DateTime? @map("verified_at")
+  lastSeenAt    DateTime? @map("last_seen_at")
+  revokedAt     DateTime? @map("revoked_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  oneTimeKeys DeviceOneTimeKey[]
+  inbox       ToDeviceMessage[]
+
+  @@index([userId])
+  @@index([keysUpdatedAt])
+  @@map("devices")
+}
+
+/// One-time and fallback public keys (Olm). Each one-time key is handed out once.
+model DeviceOneTimeKey {
+  id        BigInt   @id @default(autoincrement())
+  deviceId  String   @map("device_id") @db.Uuid
+  /// "<algorithm>:<key id>", e.g. "signed_curve25519:AAAAHQ".
+  keyId     String   @map("key_id")
+  algorithm String
+  /// Signed public key object as uploaded by the client.
+  key       Json
+  fallback  Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, keyId, fallback])
+  @@index([deviceId, fallback, algorithm])
+  @@map("device_one_time_keys")
+}
+
+/// Cross-signing public keys (master, self-signing, user-signing) for QR device verification.
+model CrossSigningKey {
+  userId    String   @map("user_id") @db.Uuid
+  usage     String
+  key       Json
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
-  @@map("devices")
+  @@id([userId, usage])
+  @@map("cross_signing_keys")
+}
+
+/// Device-to-device envelopes (Olm-encrypted room keys, verification events).
+/// The server routes them and never sees their plaintext.
+model ToDeviceMessage {
+  id                BigInt   @id @default(autoincrement())
+  recipientDeviceId String   @map("recipient_device_id") @db.Uuid
+  senderUserId      String   @map("sender_user_id") @db.Uuid
+  senderDeviceId    String?  @map("sender_device_id") @db.Uuid
+  eventType         String   @map("event_type")
+  content           Json
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  recipient Device @relation(fields: [recipientDeviceId], references: [id], onDelete: Cascade)
+
+  @@index([recipientDeviceId, id])
+  @@map("to_device_messages")
+}
+
+/// Server-side encrypted key backup. Keys are encrypted on the client with the
+/// backup public key; the private key is protected by the user's master passphrase.
+model KeyBackupVersion {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  algorithm String
+  authData  Json      @map("auth_data")
+  etag      Int       @default(0)
+  createdAt DateTime  @default(now()) @map("created_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions KeyBackupSession[]
+
+  @@index([userId, deletedAt])
+  @@map("key_backup_versions")
+}
+
+model KeyBackupSession {
+  versionId String   @map("version_id") @db.Uuid
+  roomId    String   @map("room_id")
+  sessionId String   @map("session_id")
+  data      Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  version KeyBackupVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@id([versionId, roomId, sessionId])
+  @@map("key_backup_sessions")
+}
+
+/// Opaque client-encrypted secrets (e.g. the backup key wrapped under the master passphrase).
+model UserSecret {
+  userId     String   @map("user_id") @db.Uuid
+  name       String
+  ciphertext Json
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, name])
+  @@map("user_secrets")
 }
 
 // ─────────────────────────── RBAC / ABAC ───────────────────────────
@@ -685,6 +803,10 @@ model Channel {
   dormitoryId       String?     @map("dormitory_id") @db.Uuid
   academicGroupId   String?     @map("academic_group_id") @db.Uuid
   courseOfferingId  String?     @unique @map("course_offering_id") @db.Uuid
+  /// DIRECT channels: "<smaller user id>:<larger user id>", one chat per pair.
+  directKey         String?     @unique @map("direct_key")
+  /// Key of the provisioning rule that created the channel (e.g. "group:<id>").
+  provisionKey      String?     @unique @map("provision_key")
   createdById       String?     @map("created_by_id") @db.Uuid
   createdAt         DateTime    @default(now()) @map("created_at")
   updatedAt         DateTime    @updatedAt @map("updated_at")
@@ -705,13 +827,15 @@ model Channel {
 }
 
 model ChannelMember {
-  channelId  String     @map("channel_id") @db.Uuid
-  userId     String     @map("user_id") @db.Uuid
-  role       MemberRole @default(MEMBER)
-  joinedAt   DateTime   @default(now()) @map("joined_at")
+  channelId  String           @map("channel_id") @db.Uuid
+  userId     String           @map("user_id") @db.Uuid
+  role       MemberRole       @default(MEMBER)
+  joinedAt   DateTime         @default(now()) @map("joined_at")
   /// Guests / temporary participants.
-  expiresAt  DateTime?  @map("expires_at")
-  mutedUntil DateTime?  @map("muted_until")
+  expiresAt  DateTime?        @map("expires_at")
+  mutedUntil DateTime?        @map("muted_until")
+  source     MembershipSource @default(MANUAL)
+  lastReadAt DateTime?        @map("last_read_at")
 
   channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -722,20 +846,24 @@ model ChannelMember {
 }
 
 model Message {
-  id           String    @id @default(uuid()) @db.Uuid
-  channelId    String    @map("channel_id") @db.Uuid
-  senderId     String    @map("sender_id") @db.Uuid
-  threadRootId String?   @map("thread_root_id") @db.Uuid
+  id              String           @id @default(uuid()) @db.Uuid
+  channelId       String           @map("channel_id") @db.Uuid
+  senderId        String           @map("sender_id") @db.Uuid
+  threadRootId    String?          @map("thread_root_id") @db.Uuid
   /// Plaintext body: only for E2EE DISABLED channels (searchable, archivable).
-  body         String?
-  /// Opaque ciphertext produced on the client by libsignal / vodozemac.
-  ciphertext   Bytes?
+  body            String?
+  /// Opaque ciphertext produced on the client by vodozemac (Megolm / Olm).
+  ciphertext      Bytes?
+  scheme          EncryptionScheme @default(NONE)
+  senderDeviceId  String?          @map("sender_device_id") @db.Uuid
+  /// Client-generated id: retries of the same send never create duplicates.
+  clientMessageId String?          @map("client_message_id")
   /// Priority alerts (Civil Protection) bypass DND and Quiet Hours.
-  isPriority   Boolean   @default(false) @map("is_priority")
-  expiresAt    DateTime? @map("expires_at")
-  editedAt     DateTime? @map("edited_at")
-  deletedAt    DateTime? @map("deleted_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
+  isPriority      Boolean          @default(false) @map("is_priority")
+  expiresAt       DateTime?        @map("expires_at")
+  editedAt        DateTime?        @map("edited_at")
+  deletedAt       DateTime?        @map("deleted_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
 
   channel     Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
   sender      User         @relation(fields: [senderId], references: [id], onDelete: Restrict)
@@ -743,7 +871,9 @@ model Message {
   replies     Message[]    @relation("Thread")
   attachments FileObject[]
 
+  @@unique([senderId, clientMessageId])
   @@index([channelId, createdAt])
+  @@index([threadRootId, createdAt])
   @@index([expiresAt])
   @@map("messages")
 }

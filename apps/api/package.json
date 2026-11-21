@@ -15,6 +15,7 @@
     "@nestjs/common": "^11.1.6",
     "@nestjs/core": "^11.1.6",
     "@nestjs/platform-express": "^11.1.6",
+    "@nestjs/platform-socket.io": "11.2.11",
     "@nestjs/websockets": "^11.1.6",
     "@puet/database": "workspace:*",
     "@puet/policy-engine": "workspace:*",
@@ -25,11 +26,14 @@
     "openid-client": "5.7.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
+    "socket.io": "4.8.3",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@nestjs/testing": "^11.2.11",
+    "@puet/e2ee": "workspace:*",
     "@types/express": "^5.0.3",
+    "socket.io-client": "4.8.3",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"

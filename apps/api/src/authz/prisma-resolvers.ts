@@ -210,3 +210,31 @@ export async function currentCourseOfferingIds(
   });
   return rows.map((r) => r.id);
 }
+
+/** The caller's own account. Always owned by the caller; there is no id to tamper with. */
+@Injectable()
+export class SelfResolver implements ResourceResolver {
+  readonly types = [ResourceType.SELF] as const;
+
+  async resolve(type: ResourceType, _id: string | undefined, principal: Principal): Promise<Resource | null> {
+    return { type, tenantId: principal.tenantId, ownerId: principal.userId };
+  }
+}
+
+/** A registered E2EE device. Revoked devices do not resolve. */
+@Injectable()
+export class DeviceResolver implements ResourceResolver {
+  readonly types = [ResourceType.DEVICE] as const;
+
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+
+  async resolve(type: ResourceType, id: string | undefined): Promise<Resource | null> {
+    if (!id) return null;
+    const device = await this.prisma.device.findUnique({
+      where: { id },
+      select: { userId: true, revokedAt: true, user: { select: { tenantId: true } } },
+    });
+    if (!device || device.revokedAt) return null;
+    return { type, id, tenantId: device.user.tenantId, ownerId: device.userId };
+  }
+}
