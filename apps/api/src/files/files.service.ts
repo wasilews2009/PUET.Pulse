@@ -125,7 +125,7 @@ export class FilesService {
     return this.config.files.maxBytes;
   }
 
-  async upload(principal: Principal, channel: Resource, body: Buffer, rawName: string, confidential: boolean, opts: { processNow?: boolean } = {}) {
+  async upload(principal: Principal, channel: Resource, body: Buffer, rawName: string, confidential: boolean) {
     if (channel.e2eeMode === E2eeMode.MANDATORY) {
       // The server cannot scan or sanitize client-encrypted bytes; plaintext would break the E2EE promise.
       throw new BadRequestException('Attachments are not available in end-to-end encrypted channels yet');
@@ -163,7 +163,7 @@ export class FilesService {
       outcome: 'SUCCESS',
       metadata: { channelId: channel.id, mimeType, sizeBytes: body.length, confidential },
     });
-    if (opts.processNow !== false) {
+    if (this.config.files.scanInline) {
       void this.process(id).catch((e: unknown) => this.logger.warn(`file processing deferred: ${(e as Error).message}`));
     }
     return toFileDto(row);

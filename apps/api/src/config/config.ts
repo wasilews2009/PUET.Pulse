@@ -61,6 +61,8 @@ const schema = z.object({
   CLAMAV_HOST: z.string().default('localhost'),
   CLAMAV_PORT: z.coerce.number().int().min(1).max(65535).default(3310),
   FILE_MAX_MB: z.coerce.number().int().min(1).max(500).default(50),
+  /** Scan right after upload (the sweeper job retries either way). Tests turn this off to drive the pipeline. */
+  FILE_SCAN_INLINE: z.enum(['true', 'false']).default('true'),
   /** Internal CA (УЕП): PEM certificate and PKCS#8 private key, outside the repository. */
   PKI_CA_CERT_FILE: z.string().optional(),
   PKI_CA_KEY_FILE: z.string().optional(),
@@ -94,6 +96,7 @@ export interface AppConfig {
   jobsEnabled: boolean;
   files: {
     maxBytes: number;
+    scanInline: boolean;
     s3: { endpoint: string; region: string; accessKeyId: string; secretAccessKey: string; buckets: { attachments: string; quarantine: string } };
     clamav: { host: string; port: number };
   };
@@ -147,6 +150,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     jobsEnabled: e.JOBS_ENABLED === 'true',
     files: {
       maxBytes: e.FILE_MAX_MB * 1024 * 1024,
+      scanInline: e.FILE_SCAN_INLINE === 'true',
       s3: {
         endpoint: e.S3_ENDPOINT,
         region: e.S3_REGION,
