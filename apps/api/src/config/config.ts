@@ -14,6 +14,9 @@ const csv = (fallback: string) =>
         .filter(Boolean),
     );
 
+/** Optional setting: an empty value in .env means "not set". */
+const optional = <T extends z.ZodTypeAny>(schema: T) => z.preprocess((v) => (v === '' ? undefined : v), schema.optional());
+
 const integrationClient = z.object({
   /** Stable UUID used as the actor id in the audit log. */
   id: z.string().uuid(),
@@ -64,16 +67,16 @@ const schema = z.object({
   /** Scan right after upload (the sweeper job retries either way). Tests turn this off to drive the pipeline. */
   FILE_SCAN_INLINE: z.enum(['true', 'false']).default('true'),
   /** Internal CA (УЕП): PEM certificate and PKCS#8 private key, outside the repository. */
-  PKI_CA_CERT_FILE: z.string().optional(),
-  PKI_CA_KEY_FILE: z.string().optional(),
+  PKI_CA_CERT_FILE: optional(z.string()),
+  PKI_CA_KEY_FILE: optional(z.string()),
   /** Public base URL embedded in certificates for CRL / OCSP / CA issuer and in verification QR codes. */
-  PKI_PUBLIC_URL: z.string().url().optional(),
+  PKI_PUBLIC_URL: optional(z.string().url()),
   PKI_CERT_DAYS: z.coerce.number().int().min(30).max(825).default(365),
   /** Secret for document verification codes (QR). At least 32 characters. */
-  VERIFY_CODE_SECRET: z.string().min(32).optional(),
+  VERIFY_CODE_SECRET: optional(z.string().min(32)),
   /** On-premise QES gateway (IIT EUSignCP server) for КЕП. Unset: QES signing is unavailable. */
-  QES_GATEWAY_URL: z.string().url().optional(),
-  QES_GATEWAY_TOKEN: z.string().min(16).optional(),
+  QES_GATEWAY_URL: optional(z.string().url()),
+  QES_GATEWAY_TOKEN: optional(z.string().min(16)),
 });
 
 export interface AppConfig {

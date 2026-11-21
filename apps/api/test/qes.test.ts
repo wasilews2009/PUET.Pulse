@@ -58,3 +58,25 @@ describe('External QES adapter (КЕП through the certified gateway)', () => {
     expect(sameFullName('Іваненко Марʼяна', 'Іваненко Марія')).toBe(false);
   });
 });
+
+describe('Phase 4 configuration', () => {
+  it('empty optional settings mean "disabled", not invalid', async () => {
+    const { loadConfig } = await import('../src/config/config');
+    const cfg = loadConfig({
+      WEB_ORIGIN: 'https://pulse.test',
+      REDIS_URL: 'redis://x',
+      OIDC_ISSUER_URL: 'https://sso.test',
+      OIDC_CLIENT_ID: 'c',
+      OIDC_CLIENT_SECRET: 's',
+      OIDC_REDIRECT_URI: 'https://pulse.test/cb',
+      QES_GATEWAY_URL: '',
+      QES_GATEWAY_TOKEN: '',
+      VERIFY_CODE_SECRET: '',
+      PKI_CA_CERT_FILE: '',
+    });
+    expect(cfg.pki.qes).toBeNull();
+    expect(cfg.pki.verifyCodeSecret).toBeUndefined();
+    expect(cfg.pki.publicUrl).toBe('https://pulse.test/api');
+    expect(cfg.files.maxBytes).toBe(50 * 1024 * 1024);
+  });
+});

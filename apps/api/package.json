@@ -9,7 +9,8 @@
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "pki:init-ca": "tsx scripts/init-ca.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1175.0",

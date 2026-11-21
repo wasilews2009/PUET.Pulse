@@ -94,10 +94,16 @@ apps/
     src/notifications/ Quiet Hours decisions, Redis digest store
     src/provisioning/  channel auto-provisioning, background jobs
     src/e2ee/          Matrix-compatible key directory, to-device, key backup
+    src/files/         quarantine, ClamAV, PDF CDR, watermark, viewer, annotations
+    src/pki/           internal CA (CSR, CRL, OCSP), SignatureProvider, QES adapter,
+                       signatures, verification protocol + QR
+    src/approvals/     multi-step approval routes
+    scripts/init-ca.ts one-time creation of the internal CA (keys outside the repo)
 packages/
   shared/              Domain vocabulary: tenants, roles, actions, channel types
   policy-engine/       Pure RBAC + ABAC policy decision point (no I/O)
   e2ee/                Client E2EE layer (vodozemac Olm/Megolm, backup, QR)
+  signing/             Client УЕП: non-extractable WebCrypto keys, CSR, CAdES-BES (PKI.js)
   database/            Prisma schema, migrations, seed (PUET structure)
 infra/                 Postgres init, MinIO bucket bootstrap
 assets/brand/          PUET logos (official SVG vectors, .ai source, raster originals)
@@ -199,6 +205,39 @@ the same rules. Evaluation order, first deny wins, default deny:
   share a non-`DISABLED` channel; everything else is silently dropped. Keys of
   a device never change once uploaded; removing a member rotates room keys.
 
+**Documents and signature rules (Phase 4)**
+
+- Upload → quarantine bucket → ClamAV (clamd INSTREAM) → release. Fail closed:
+  a scanner error keeps the file in quarantine (job retries, then `FAILED`).
+  The type is sniffed from the bytes against an allowlist (PDF, PNG, JPEG, WebP,
+  text, OOXML without macros); the client's type and name are never trusted.
+- PDFs are rebuilt by CDR (`files/pdf-sanitizer.ts`): only page content is copied
+  into a new document; then the result is re-parsed and must contain no active
+  construct. Encrypted or unparsable PDFs are refused. Only `sanitized_key` is
+  ever served, viewed or signed (`served_sha256`).
+- Confidential files must be PDFs: view-only, every view watermarked with the
+  viewer's name, corporate id and time; download denied by the policy engine.
+  Served files carry `Cache-Control: no-store`, `nosniff` and a sandbox CSP.
+- Attachments are refused in `MANDATORY` E2EE channels (the server cannot scan
+  client-encrypted bytes) until encrypted attachments are designed.
+- Approvers of a route may view and sign that one file without membership
+  (`Resource.isApprover`, computed by the resolver); only they decide
+  (`document.approve`). Steps are decided in order; approving a step that
+  requires it needs the approver's own signature on the file. Routes respect
+  DM rules (a student cannot route to the Rectorate).
+- Internal CA: the CSR contributes only its ECDSA P-256 public key (proof of
+  possession checked); the subject comes from the profile. One active internal
+  certificate per person; a new one supersedes the old. CRL `GET /pki/crl`,
+  OCSP `POST /pki/ocsp`, CA `GET /pki/ca.crt` are public for relying parties.
+- A signature is accepted only through a `SignatureProvider`, with a
+  certificate that belongs to the caller and is `ACTIVE`. КЕП certificates are
+  bound first: a qualified signature over a server HMAC challenge whose holder
+  name equals the profile name. `document_signatures` is append-only (trigger).
+- Public verification `GET /verify/:fileId/:code`: the code is an HMAC of the
+  file id (`VERIFY_CODE_SECRET`), wrong codes look like missing files, and the
+  public view omits the file name. A signature stays valid if its certificate
+  was revoked after signing.
+
 ## 5. Organizational topology and data model
 
 - **Tenants:** `PUET_MAIN`, `PUET_LYCEUM` (strict minor protection),
@@ -273,8 +312,10 @@ section apply only to marketing pages, not to the messenger app.
   auto-provisioning, threads, DMs and groups, presence, Quiet Hours with
   morning digest (Redis), TTL purge, E2EE key directory and the vodozemac
   client layer (Olm/Megolm, key backup, QR verification).
-- **Phase 4:** Secure PDF Viewer (CDR, watermarks, JSON annotations), Internal
-  PKI + External QES, multi-step approval routes, verification protocol with QR.
+- **Phase 4 (done):** files with quarantine + ClamAV, PDF CDR, Secure Viewer API
+  (watermarks, view-only DLP, JSON annotations), internal CA (CSR, CRL, OCSP) and
+  `packages/signing`, `SignatureProvider` with the QES gateway adapter (OCSP +
+  TSP), multi-step approval routes, verification protocol with QR and PDF.
 - **Phase 5:** React frontend with PUET tokens, Light / Dark, UA / EN, plus
   security tests (IDOR, minor isolation, signature tampering).
 

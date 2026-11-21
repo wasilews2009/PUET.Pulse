@@ -8,7 +8,7 @@ On-premise, zero-trust, multi-tenant.
 
 > Правила архітектури та безпеки: [CLAUDE.md](CLAUDE.md).
 
-## Стан: Фази 1–3 виконано
+## Стан: Фази 1–4 виконано
 
 | Що | Де |
 |---|---|
@@ -29,6 +29,11 @@ On-premise, zero-trust, multi-tenant.
 | «Тихі години» з ранковим дайджестом у Redis; тривоги ЦЗ обходять усі обмеження | `apps/api/src/notifications` |
 | E2EE: каталог ключів (сумісний з Matrix), to-device, резервна копія ключів | `apps/api/src/e2ee` |
 | Клієнтський шар E2EE на vodozemac (Olm / Megolm), відновлення за майстер-паролем, верифікація пристроїв за QR | `packages/e2ee` |
+| **Фаза 4.** Файли: карантин, перевірка ClamAV, дозволені типи за вмістом, MinIO з SSE | `apps/api/src/files` |
+| Санітизація PDF (CDR), водяні знаки для конфіденційних документів, JSON-анотації | `apps/api/src/files` |
+| Внутрішній ЦСК (УЕП): сертифікат з CSR, CRL, OCSP; адаптер КЕП через шлюз ІІТ з обов'язковими OCSP і TSP | `apps/api/src/pki` |
+| Клієнтський підпис: ключ не покидає пристрій, CSR, CAdES-BES | `packages/signing` |
+| Маршрути погодження, протокол перевірки підписів з QR-кодом і PDF | `apps/api/src/approvals`, `apps/api/src/pki` |
 
 ## Швидкий старт
 
@@ -48,8 +53,15 @@ node apps/api/dist/main.js    # GET /health -> 200
 описано в `.env.example` (`OIDC_*`, `SESSION_*`, `INTEGRATION_CLIENTS`).
 Візуальна адмін-панель і месенджер з'являться у Фазі 5; зараз це API `/admin/*`,
 REST-маршрути месенджера, `/e2ee/*` і WebSocket `/ws`. Нові змінні Фази 3:
-`E2EE_SERVER_NAME`, `JOBS_ENABLED` (див. `.env.example`). Після оновлення
-запустіть `pnpm db:deploy && pnpm db:seed`.
+`E2EE_SERVER_NAME`, `JOBS_ENABLED`; Фази 4: `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`,
+`FILE_MAX_MB`, `PKI_CA_*`, `PKI_PUBLIC_URL`, `VERIFY_CODE_SECRET`, `QES_GATEWAY_*`
+(див. `.env.example`). Після оновлення запустіть `pnpm db:deploy && pnpm db:seed`.
+
+Внутрішній ЦСК створюється один раз, ключі зберігаються поза репозиторієм:
+
+```bash
+pnpm --filter @puet/api pki:init-ca /etc/puet/ca
+```
 
 ## Тести
 
@@ -57,16 +69,20 @@ REST-маршрути месенджера, `/e2ee/*` і WebSocket `/ws`. Нов
 pnpm test
 ```
 
-- `packages/policy-engine`: 50 тестів правил (IDOR, ізоляція тенантів, неповнолітні,
+- `packages/policy-engine`: 57 тестів правил (IDOR, ізоляція тенантів, неповнолітні,
   заборона DM до ректорату, приховані телефони й кімнати, гості, DLP, конфігуровані
-  політики, машинні принципали інтеграцій, власні пристрої й акаунт).
+  політики, машинні принципали інтеграцій, власні пристрої й акаунт, підписи й погодження).
 - `packages/e2ee`: 8 тестів справжнього vodozemac (шифрування, чужий не прочитає,
   ротація ключів після виключення, підробка шифротексту, відновлення з копії, QR).
-- `apps/api`: 49 модульних тестів (guard-и HTTP і WebSocket, hash-ланцюг аудиту, MFA,
-  open redirect, HMAC, вік неповнолітніх, сесії, конфігурація, «Тихі години», DST)
-  і 33 наскрізні тести на PostgreSQL: 18 Фази 2 (вхід, CSRF, вебхуки, офбординг,
-  адмін-панель) і 15 Фази 3 (автоканали, гілки, IDOR, режими E2EE, DM, неповнолітні,
-  TTL, «Тихі години», CSWSH, доставка через WebSocket, E2EE через API, офбординг):
+- `apps/api`: 79 модульних тестів (guard-и HTTP і WebSocket, hash-ланцюг аудиту, MFA,
+  open redirect, HMAC, вік неповнолітніх, сесії, конфігурація, «Тихі години», DST,
+  CDR шкідливого PDF, ClamAV, ЦСК: CSR, підробка підпису, CRL, OCSP, адаптер КЕП)
+  і 46 наскрізних тестів на PostgreSQL: 18 Фази 2 (вхід, CSRF, вебхуки, офбординг,
+  адмін-панель), 15 Фази 3 (автоканали, гілки, IDOR, режими E2EE, DM, неповнолітні,
+  TTL, «Тихі години», CSWSH, доставка через WebSocket, E2EE через API, офбординг)
+  і 13 Фази 4 (карантин і CDR, вірус EICAR, недоступний сканер, IDOR файлів, DLP і
+  водяний знак, анотації, сертифікати, підписи УЕП і КЕП, маршрути погодження,
+  протокол перевірки з QR):
 
 ```bash
 RUN_DB_TESTS=1 DATABASE_URL=postgresql://... pnpm test
