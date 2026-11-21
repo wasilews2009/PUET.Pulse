@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.turbo/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+# Never commit private keys or PKCS#12 containers
+*.pem
+*.key
+*.p12
+*.pfx
