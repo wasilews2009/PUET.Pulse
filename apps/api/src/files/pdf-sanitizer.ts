@@ -77,6 +77,16 @@ export interface SanitizedPdf {
 }
 
 export async function sanitizePdf(input: Buffer): Promise<SanitizedPdf> {
+  try {
+    return await rebuild(input);
+  } catch (e) {
+    if (e instanceof PdfRejectedError) throw e;
+    // Any parser or copy failure means we cannot prove the result safe: refuse it.
+    throw new PdfRejectedError('PDF cannot be sanitized');
+  }
+}
+
+async function rebuild(input: Buffer): Promise<SanitizedPdf> {
   let src: PDFDocument;
   try {
     src = await PDFDocument.load(input, { ignoreEncryption: false, updateMetadata: false, throwOnInvalidObject: true });
@@ -142,7 +152,11 @@ export function findActiveContent(doc: PDFDocument): string[] {
     for (const [k, v] of dict.entries()) {
       const name = k.decodeText();
       if (ACTIVE_KEYS.includes(name) && name !== 'Annots') found.add(`/${name}`);
-      if (name === 'Annots' && v !== undefined) found.add('/Annots');
+      if (name === 'Annots') {
+        const arr = v instanceof PDFRef ? doc.context.lookup(v) : v;
+        // pdf-lib adds an empty /Annots array when it edits a page; only real annotations count.
+        if (!(arr instanceof PDFArray) || arr.size() > 0) found.add('/Annots');
+      }
       if (name === 'S' && v instanceof PDFName && ACTIVE_ACTION_TYPES.has(v.decodeText())) found.add(`/S /${v.decodeText()}`);
       if (name === 'Type' && v instanceof PDFName && ['Filespec', 'EmbeddedFile', 'Action'].includes(v.decodeText())) {
         found.add(`/Type /${v.decodeText()}`);

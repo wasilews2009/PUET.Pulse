@@ -2,6 +2,23 @@ import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/c
 import { APP_GUARD } from '@nestjs/core';
 import Redis from 'ioredis';
 import { AdminController } from './admin/admin.controller';
+import { ApprovalsController } from './approvals/approvals.controller';
+import { ApprovalsService } from './approvals/approvals.service';
+import { AnnotationsService } from './files/annotations';
+import { FilesController } from './files/files.controller';
+import { FilesService } from './files/files.service';
+import { ClamdScanner, MALWARE_SCANNER } from './files/malware-scanner';
+import { OBJECT_STORE, S3ObjectStore } from './files/object-store';
+import { PkiController } from './pki/pki.controller';
+import { CA_LOADER, PkiService, fileCaLoader, type CaLoader } from './pki/pki.service';
+import {
+  EXTERNAL_SIGNATURE_PROVIDER,
+  ExternalQesAdapter,
+  INTERNAL_SIGNATURE_PROVIDER,
+  InternalPkiProvider,
+} from './pki/signature-provider';
+import { SignaturesService } from './pki/signatures.service';
+import { VerificationService } from './pki/verification.service';
 import { PoliciesService } from './admin/policies.service';
 import { RolesService } from './admin/roles.service';
 import { StructureService } from './admin/structure.service';
@@ -53,6 +70,9 @@ export const REDIS = Symbol('REDIS');
     MessagingController,
     ProfileController,
     E2eeController,
+    FilesController,
+    PkiController,
+    ApprovalsController,
     IntegrationsController,
     AdminController,
   ],
@@ -67,6 +87,21 @@ export const REDIS = Symbol('REDIS');
     { provide: OIDC_PROVIDER, useClass: OpenIdClientProvider },
     { provide: REALTIME_BUS, inject: [REDIS], useFactory: (redis: Redis) => new RedisRealtimeBus(redis) },
     { provide: DIGEST_STORE, inject: [REDIS], useFactory: (redis: Redis) => new RedisDigestStore(redis) },
+    {
+      provide: OBJECT_STORE,
+      inject: [APP_CONFIG],
+      useFactory: (cfg: AppConfig) => new S3ObjectStore({ ...cfg.files.s3, buckets: cfg.files.s3.buckets }),
+    },
+    { provide: MALWARE_SCANNER, inject: [APP_CONFIG], useFactory: (cfg: AppConfig) => new ClamdScanner(cfg.files.clamav.host, cfg.files.clamav.port) },
+    { provide: CA_LOADER, inject: [APP_CONFIG], useFactory: (cfg: AppConfig) => fileCaLoader(cfg) },
+    { provide: INTERNAL_SIGNATURE_PROVIDER, inject: [CA_LOADER], useFactory: (ca: CaLoader) => new InternalPkiProvider(ca) },
+    { provide: EXTERNAL_SIGNATURE_PROVIDER, inject: [APP_CONFIG], useFactory: (cfg: AppConfig) => new ExternalQesAdapter(cfg.pki.qes) },
+    FilesService,
+    AnnotationsService,
+    PkiService,
+    SignaturesService,
+    ApprovalsService,
+    VerificationService,
     MessagingService,
     NotificationService,
     ProvisioningService,
