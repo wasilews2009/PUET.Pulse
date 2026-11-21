@@ -3,7 +3,8 @@ import { TextWriter } from './fonts';
 
 export interface WatermarkViewer {
   fullName: string;
-  userId: string;
+  /** Corporate id shown in the mark (never a phone or e-mail). */
+  marker: string;
 }
 
 /** PUET navy (#163C56) at low opacity: readable as a mark, never hides the content. */
@@ -17,7 +18,7 @@ const NAVY = rgb(0x16 / 255, 0x3c / 255, 0x56 / 255);
 export async function watermarkPdf(sanitized: Buffer, viewer: WatermarkViewer, at: Date, label: string): Promise<Buffer> {
   const doc = await PDFDocument.load(sanitized, { updateMetadata: false });
   const writer = TextWriter.attach(doc);
-  const stamp = `${at.toISOString().slice(0, 16).replace('T', ' ')} UTC · ${viewer.userId.slice(0, 8)}`;
+  const stamp = `${at.toISOString().slice(0, 16).replace('T', ' ')} UTC · ${viewer.marker}`;
   const lines = [`${label} · ${viewer.fullName}`, stamp];
 
   for (const page of doc.getPages()) {

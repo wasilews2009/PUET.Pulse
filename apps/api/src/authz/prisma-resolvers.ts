@@ -84,6 +84,12 @@ export class ChannelScopedResolver implements ResourceResolver {
       select: { role: true, expiresAt: true },
     });
     const activeMember = !!membership && (!membership.expiresAt || membership.expiresAt > new Date());
+    // Approvers named on a live or decided route of this file may read and sign it (policy engine decides).
+    const isApprover =
+      type === ResourceType.FILE &&
+      (await this.prisma.approvalStep.count({
+        where: { approverId: principal.userId, route: { fileId: id, status: { not: 'CANCELLED' } } },
+      })) > 0;
 
     return {
       type,
@@ -94,6 +100,7 @@ export class ChannelScopedResolver implements ResourceResolver {
       confidential: channel.confidential || confidential,
       archived: channel.archivedAt !== null,
       isMember: activeMember,
+      ...(isApprover ? { isApprover: true } : {}),
       ...(activeMember ? { memberRole: membership!.role as MemberRole } : {}),
       ...opt('ownerId', ownerId),
       ...opt('instituteId', channel.instituteId),
