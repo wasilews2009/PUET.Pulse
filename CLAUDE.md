@@ -73,7 +73,7 @@ packages/
   policy-engine/       Pure RBAC + ABAC policy decision point (no I/O)
   database/            Prisma schema, migrations, seed (PUET structure)
 infra/                 Postgres init, MinIO bucket bootstrap
-assets/brand/          PUET logos (raster originals + SVG placeholders)
+assets/brand/          PUET logos (official SVG vectors, .ai source, raster originals)
 .claude/skills/        Design skills used for GUI work (Phase 5)
 docker-compose.yml     PostgreSQL, Redis, MinIO (+ init), ClamAV
 ```
@@ -169,12 +169,14 @@ Design tokens as CSS variables, configurable through Admin white-label settings
 | `--puet-pure-white` | `#FFFFFF` | Text on dark / navy, light cards |
 
 - Typography: **Montserrat** for headings, **Inter** for body and messages.
-- Logos: `assets/brand/logo-puet-full.svg` (splash / SSO, bilingual
-  «POLTAVA UNIVERSITY OF ECONOMICS AND TRADE / Полтавський університет економіки
-  і торгівлі»), `assets/brand/logo-puet-mark.svg` (round "P" mark for header,
-  app icon, favicon, with white outline). The SVGs are placeholders wrapping the
-  raster originals; replace them with official vectors. Clear space ≥ 15% of the
-  diameter. Never change proportions or segment colors of the mark.
+- Logos (official vectors converted from `assets/brand/source/logo-puet-vector.ai`):
+  `logo-puet-full.svg` (horizontal mark + "POLTAVA UNIVERSITY OF ECONOMICS AND
+  TRADE", splash / SSO), `logo-puet-full-stacked.svg` (stacked variant),
+  `logo-puet-mark.svg` (round 3D "P" mark with white outline: header, app icon,
+  favicon). The vector has no Ukrainian line, so the splash screen sets
+  «Полтавський університет економіки і торгівлі» as live Montserrat text under
+  the logo. Clear space ≥ 15% of the mark diameter. Never change proportions or
+  segment colors of the mark.
 - Full Ukrainian and English localization (i18n); Ukrainian is the default.
 - Badge «Підписано ЕП» in navy / green opens the verification modal.
 
