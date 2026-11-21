@@ -1,0 +1,910 @@
+// PUET.Pulse database schema.
+//
+// Multi-tenant + matrix model from the technical specification:
+//   * 5 isolated tenants (central campus, lyceum, 3 colleges)
+//   * administrative vertical: 7 institutes (ННІ) -> academic groups -> students
+//   * academic vertical: 17 cross-institute departments (кафедри) -> lecturers
+//   * course offerings join 1 department + N lecturers + N groups per semester
+//   * governance, admin services, trust services, dormitories as org units
+//
+// Every tenant-owned row carries tenant_id. Every query in the API must filter by it
+// (see CLAUDE.md, "Tenant isolation"). Enum values mirror packages/shared.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────── Enums ───────────────────────────────
+
+enum TenantCode {
+  PUET_MAIN
+  PUET_LYCEUM
+  COLLEGE_POLTAVA
+  COLLEGE_CHERKASY
+  COLLEGE_BILHOROD
+}
+
+enum OrgUnitKind {
+  GOVERNANCE // Rectorate, Academic Council, Scientific & Methodological Council
+  ADMIN_SERVICE // Chancellery, HR, Finance, Legal, Admissions, QA, IT Center
+  TRUST_SERVICE // Ombudsman, Psychological Service, Military Registration
+  SAFETY_SERVICE // Civil Protection Unit
+  ACADEMIC_CENTER // STEAM-HUB, Interlingua Academy, scientific centers
+  FACILITIES // АГР: buildings, heat & power, labor safety, transport
+  CAMPUS // Student Campus (parent of dormitories)
+  COMMUNITY // Student government, trade union, arts center, museum
+  EXTERNAL // Employers' / Alumni associations, admissions guest spaces
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  OFFBOARDED
+}
+
+enum PrincipalKind {
+  STAFF
+  STUDENT
+  GUEST
+  SERVICE_BOT
+}
+
+enum Locale {
+  uk
+  en
+}
+
+enum PresenceStatus {
+  ONLINE
+  IN_CLASS // «На парі»
+  IN_COUNCIL // «На засіданні Вченої ради»
+  ON_BUSINESS_TRIP // «У відрядженні»
+  DO_NOT_DISTURB // «Не турбувати»
+  OFFLINE
+}
+
+enum EducationLevel {
+  LYCEUM
+  JUNIOR_BACHELOR // Фаховий молодший бакалавр
+  BACHELOR
+  MASTER
+  PHD // Аспірант
+  DOCTORATE // Докторант
+}
+
+enum StudyForm {
+  FULL_TIME
+  PART_TIME
+  DISTANCE
+  DUAL
+}
+
+enum RoleCode {
+  SUPER_ADMIN
+  RECTORATE
+  INSTITUTE_DIRECTOR
+  DEPARTMENT_HEAD
+  LECTURER
+  ADMIN_STAFF
+  TRUST_SERVICE_OFFICER
+  CIVIL_PROTECTION_OFFICER
+  FACILITIES_STAFF
+  DORM_COMMANDANT
+  STUDENT
+  GROUP_LEADER
+  GUEST
+}
+
+enum ChannelType {
+  DIRECT
+  PRIVATE_GROUP
+  COURSE
+  ACADEMIC_GROUP
+  INSTITUTE
+  DEPARTMENT
+  GOVERNANCE
+  ADMIN_UNIT
+  TRUST_ROOM
+  EMERGENCY
+  DORMITORY
+  PROJECT
+  COMMUNITY
+  GUEST_SPACE
+  ANNOUNCEMENT
+}
+
+enum E2eeMode {
+  MANDATORY
+  OPTIONAL
+  DISABLED
+}
+
+enum MemberRole {
+  OWNER
+  MODERATOR
+  MEMBER
+  READ_ONLY
+}
+
+enum PolicyEffect {
+  ALLOW
+  DENY
+}
+
+enum FileScanStatus {
+  PENDING
+  CLEAN
+  INFECTED
+  FAILED
+}
+
+enum CdrStatus {
+  NOT_REQUIRED
+  PENDING
+  SANITIZED
+  FAILED
+}
+
+enum SignatureProviderKind {
+  INTERNAL_PKI // УЕП, internal university CA
+  EXTERNAL_QES // КЕП via certified Ukrainian provider (ДСТУ 4145 / CAdES)
+}
+
+enum CertificateStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum RevocationReason {
+  UNSPECIFIED
+  KEY_COMPROMISE
+  AFFILIATION_CHANGED // dismissal / expulsion
+  SUPERSEDED
+  CESSATION_OF_OPERATION
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum AuditOutcome {
+  SUCCESS
+  DENIED
+  FAILURE
+}
+
+// ───────────────────────── Tenants & structure ─────────────────────────
+
+/// Isolated educational contour.
+model Tenant {
+  id             String     @id @default(uuid()) @db.Uuid
+  code           TenantCode @unique
+  nameUk         String     @map("name_uk")
+  nameEn         String     @map("name_en")
+  city           String?
+  /// Lyceum: strict minor protection for everyone in this tenant.
+  minorProtected Boolean    @default(false) @map("minor_protected")
+  defaultLocale  Locale     @default(uk) @map("default_locale")
+  /// White-label overrides for design tokens (Phase 5 admin settings).
+  themeOverrides Json?      @map("theme_overrides")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  institutes      Institute[]
+  departments     Department[]
+  orgUnits        OrgUnit[]
+  dormitories     Dormitory[]
+  academicGroups  AcademicGroup[]
+  semesters       Semester[]
+  disciplines     Discipline[]
+  courseOfferings CourseOffering[]
+  users           User[]
+  roleAssignments RoleAssignment[]
+  channels        Channel[]
+  abacPolicies    AbacPolicy[]
+  files           FileObject[]
+
+  @@map("tenants")
+}
+
+/// Administrative vertical: Навчально-науковий інститут (ННІ).
+model Institute {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  code          String
+  nameUk        String   @map("name_uk")
+  nameEn        String   @map("name_en")
+  /// International Education institute defaults to a bilingual UI.
+  defaultLocale Locale   @default(uk) @map("default_locale")
+  bilingualUi   Boolean  @default(false) @map("bilingual_ui")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  academicGroups AcademicGroup[]
+  students       StudentProfile[]
+  channels       Channel[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("institutes")
+}
+
+/// Academic vertical: кафедра. Cross-institute: teaches groups of any institute.
+model Department {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  code      String
+  nameUk    String   @map("name_uk")
+  nameEn    String   @map("name_en")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  staff           StaffDepartment[]
+  disciplines     Discipline[]
+  courseOfferings CourseOffering[]
+  channels        Channel[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("departments")
+}
+
+/// Governance bodies, admin services, trust & safety services, campus units.
+model OrgUnit {
+  id                    String      @id @default(uuid()) @db.Uuid
+  tenantId              String      @map("tenant_id") @db.Uuid
+  parentId              String?     @map("parent_id") @db.Uuid
+  code                  String
+  kind                  OrgUnitKind
+  nameUk                String      @map("name_uk")
+  nameEn                String      @map("name_en")
+  /// Finance, HR, Legal, Military, Academic Council: DLP view-only documents.
+  confidential          Boolean     @default(false)
+  /// Forces E2EE for every channel of this unit.
+  e2eeMode              E2eeMode    @default(DISABLED) @map("e2ee_mode")
+  /// Psychological Service / Ombudsman: requester identity hidden from staff.
+  anonymousIntake       Boolean     @default(false) @map("anonymous_intake")
+  /// Civil Protection: alerts bypass Do Not Disturb and Quiet Hours.
+  bypassesQuietHours    Boolean     @default(false) @map("bypasses_quiet_hours")
+  /// Chancellery, Finance, HR, Legal: forbid forwarding files outside the unit.
+  forbidExternalForward Boolean     @default(false) @map("forbid_external_forward")
+  isActive              Boolean     @default(true) @map("is_active")
+  createdAt             DateTime    @default(now()) @map("created_at")
+  updatedAt             DateTime    @updatedAt @map("updated_at")
+
+  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  parent      OrgUnit?       @relation("OrgUnitTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children    OrgUnit[]      @relation("OrgUnitTree")
+  members     StaffOrgUnit[]
+  channels    Channel[]
+  dormitories Dormitory[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, kind])
+  @@map("org_units")
+}
+
+/// Dormitories № 1–4 with floors and rooms.
+model Dormitory {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  campusId  String?  @map("campus_id") @db.Uuid
+  number    Int
+  nameUk    String   @map("name_uk")
+  nameEn    String   @map("name_en")
+  address   String?
+  floors    Int      @default(5)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  campus   OrgUnit?        @relation(fields: [campusId], references: [id], onDelete: SetNull)
+  rooms    DormitoryRoom[]
+  channels Channel[]
+
+  @@unique([tenantId, number])
+  @@map("dormitories")
+}
+
+model DormitoryRoom {
+  id          String @id @default(uuid()) @db.Uuid
+  dormitoryId String @map("dormitory_id") @db.Uuid
+  floor       Int
+  number      String
+  capacity    Int    @default(3)
+
+  dormitory Dormitory        @relation(fields: [dormitoryId], references: [id], onDelete: Cascade)
+  residents StudentProfile[]
+
+  @@unique([dormitoryId, number])
+  @@map("dormitory_rooms")
+}
+
+// ───────────────────────── Academic process ─────────────────────────
+
+model AcademicGroup {
+  id             String         @id @default(uuid()) @db.Uuid
+  tenantId       String         @map("tenant_id") @db.Uuid
+  /// Null for colleges / lyceum (no institutes there).
+  instituteId    String?        @map("institute_id") @db.Uuid
+  code           String
+  specialty      String?
+  educationLevel EducationLevel @map("education_level")
+  studyForm      StudyForm      @default(FULL_TIME) @map("study_form")
+  courseYear     Int            @map("course_year")
+  /// Group id in ЄДЕБО / ERP.
+  externalId     String?        @map("external_id")
+  isActive       Boolean        @default(true) @map("is_active")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  tenant    Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  institute Institute?            @relation(fields: [instituteId], references: [id], onDelete: Restrict)
+  students  StudentProfile[]
+  courses   CourseOfferingGroup[]
+  channels  Channel[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, instituteId])
+  @@map("academic_groups")
+}
+
+model Semester {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  code      String // e.g. 2026-2027-1
+  startsOn  DateTime @map("starts_on") @db.Date
+  endsOn    DateTime @map("ends_on") @db.Date
+  isCurrent Boolean  @default(false) @map("is_current")
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  courseOfferings CourseOffering[]
+
+  @@unique([tenantId, code])
+  @@map("semesters")
+}
+
+model Discipline {
+  id           String  @id @default(uuid()) @db.Uuid
+  tenantId     String  @map("tenant_id") @db.Uuid
+  departmentId String  @map("department_id") @db.Uuid
+  code         String
+  nameUk       String  @map("name_uk")
+  nameEn       String  @map("name_en")
+  isElective   Boolean @default(false) @map("is_elective")
+
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  department Department       @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  offerings  CourseOffering[]
+
+  @@unique([tenantId, code])
+  @@map("disciplines")
+}
+
+/// One discipline taught by one department in one semester to N groups by N lecturers.
+/// Synced from the teaching-load webhook (ЄДЕБО / ERP). Owns exactly one CourseChannel.
+model CourseOffering {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  semesterId   String   @map("semester_id") @db.Uuid
+  disciplineId String   @map("discipline_id") @db.Uuid
+  departmentId String   @map("department_id") @db.Uuid
+  externalId   String?  @map("external_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant     Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  semester   Semester                 @relation(fields: [semesterId], references: [id], onDelete: Restrict)
+  discipline Discipline               @relation(fields: [disciplineId], references: [id], onDelete: Restrict)
+  department Department               @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  lecturers  CourseOfferingLecturer[]
+  groups     CourseOfferingGroup[]
+  channel    Channel?
+
+  @@unique([tenantId, externalId])
+  @@index([tenantId, semesterId])
+  @@map("course_offerings")
+}
+
+model CourseOfferingLecturer {
+  courseOfferingId String  @map("course_offering_id") @db.Uuid
+  staffProfileId   String  @map("staff_profile_id") @db.Uuid
+  isLead           Boolean @default(false) @map("is_lead")
+
+  courseOffering CourseOffering @relation(fields: [courseOfferingId], references: [id], onDelete: Cascade)
+  staffProfile   StaffProfile   @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@id([courseOfferingId, staffProfileId])
+  @@map("course_offering_lecturers")
+}
+
+model CourseOfferingGroup {
+  courseOfferingId String @map("course_offering_id") @db.Uuid
+  academicGroupId  String @map("academic_group_id") @db.Uuid
+
+  courseOffering CourseOffering @relation(fields: [courseOfferingId], references: [id], onDelete: Cascade)
+  academicGroup  AcademicGroup  @relation(fields: [academicGroupId], references: [id], onDelete: Cascade)
+
+  @@id([courseOfferingId, academicGroupId])
+  @@map("course_offering_groups")
+}
+
+// ───────────────────────────── People ─────────────────────────────
+
+model User {
+  id           String         @id @default(uuid()) @db.Uuid
+  tenantId     String         @map("tenant_id") @db.Uuid
+  /// Corporate ID used for communication and DLP watermarks.
+  corporateId  String         @unique @map("corporate_id")
+  kind         PrincipalKind
+  status       AccountStatus  @default(ACTIVE)
+  fullNameUk   String         @map("full_name_uk")
+  fullNameEn   String?        @map("full_name_en")
+  email        String         @unique
+  /// Personal phone: hidden by default, readable only by self and HR (policy engine).
+  phone        String?
+  birthDate    DateTime?      @map("birth_date") @db.Date
+  /// Denormalized from birth date / tenant by the sync job; drives minor protection.
+  isMinor      Boolean        @default(false) @map("is_minor")
+  locale       Locale         @default(uk)
+  presence     PresenceStatus @default(OFFLINE)
+  /// OIDC `sub` from Keycloak / AD (Phase 2).
+  oidcSubject  String?        @unique @map("oidc_subject")
+  edeboId      String?        @unique @map("edebo_id")
+  hrId         String?        @unique @map("hr_id")
+  mfaEnforced  Boolean        @default(false) @map("mfa_enforced")
+  /// Incremented on offboarding to invalidate every issued session token at once.
+  sessionEpoch Int            @default(0) @map("session_epoch")
+  offboardedAt DateTime?      @map("offboarded_at")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  tenant          Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  staffProfile    StaffProfile?
+  studentProfile  StudentProfile?
+  roleAssignments RoleAssignment[]    @relation("RoleAssignee")
+  grantedRoles    RoleAssignment[]    @relation("RoleGrantor")
+  memberships     ChannelMember[]
+  messages        Message[]
+  files           FileObject[]
+  quietHours      QuietHoursSchedule?
+  certificates    UserCertificate[]
+  approvalSteps   ApprovalStep[]
+  devices         Device[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, kind])
+  @@map("users")
+}
+
+/// НПП and administrative staff attributes.
+model StaffProfile {
+  id                   String   @id @default(uuid()) @db.Uuid
+  userId               String   @unique @map("user_id") @db.Uuid
+  academicDegree       String?  @map("academic_degree")
+  academicTitle        String?  @map("academic_title")
+  position             String
+  consultationSchedule Json?    @map("consultation_schedule")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  user        User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  departments StaffDepartment[]
+  orgUnits    StaffOrgUnit[]
+  teaching    CourseOfferingLecturer[]
+
+  @@map("staff_profiles")
+}
+
+/// Main department and part-time (сумісництво) affiliations.
+model StaffDepartment {
+  staffProfileId String  @map("staff_profile_id") @db.Uuid
+  departmentId   String  @map("department_id") @db.Uuid
+  isPrimary      Boolean @default(false) @map("is_primary")
+
+  staffProfile StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  department   Department   @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
+  @@id([staffProfileId, departmentId])
+  @@map("staff_departments")
+}
+
+model StaffOrgUnit {
+  staffProfileId String  @map("staff_profile_id") @db.Uuid
+  orgUnitId      String  @map("org_unit_id") @db.Uuid
+  position       String?
+
+  staffProfile StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  orgUnit      OrgUnit      @relation(fields: [orgUnitId], references: [id], onDelete: Restrict)
+
+  @@id([staffProfileId, orgUnitId])
+  @@map("staff_org_units")
+}
+
+model StudentProfile {
+  id              String         @id @default(uuid()) @db.Uuid
+  userId          String         @unique @map("user_id") @db.Uuid
+  educationLevel  EducationLevel @map("education_level")
+  studyForm       StudyForm      @default(FULL_TIME) @map("study_form")
+  instituteId     String?        @map("institute_id") @db.Uuid
+  academicGroupId String?        @map("academic_group_id") @db.Uuid
+  specialty       String?
+  courseYear      Int?           @map("course_year")
+  /// Room is visible only to the commandant of this dormitory (policy engine).
+  dormitoryRoomId String?        @map("dormitory_room_id") @db.Uuid
+  isGroupLeader   Boolean        @default(false) @map("is_group_leader")
+  isActivist      Boolean        @default(false) @map("is_activist")
+  isForeign       Boolean        @default(false) @map("is_foreign")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  institute     Institute?     @relation(fields: [instituteId], references: [id], onDelete: SetNull)
+  academicGroup AcademicGroup? @relation(fields: [academicGroupId], references: [id], onDelete: SetNull)
+  dormitoryRoom DormitoryRoom? @relation(fields: [dormitoryRoomId], references: [id], onDelete: SetNull)
+
+  @@index([academicGroupId])
+  @@map("student_profiles")
+}
+
+model Device {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  label       String
+  /// Public identity key for E2EE (Phase 3). Private keys never reach the server.
+  identityKey Bytes?    @map("identity_key")
+  verifiedAt  DateTime? @map("verified_at")
+  lastSeenAt  DateTime? @map("last_seen_at")
+  revokedAt   DateTime? @map("revoked_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("devices")
+}
+
+// ─────────────────────────── RBAC / ABAC ───────────────────────────
+
+/// Configurable role -> action matrix (No-Code Admin Panel). Seeded from the default.
+model RolePermission {
+  id        String   @id @default(uuid()) @db.Uuid
+  role      RoleCode
+  action    String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([role, action])
+  @@map("role_permissions")
+}
+
+/// A user's role inside a tenant, optionally narrowed to one unit.
+/// tenant_id NULL = cross-tenant grant (allowed only for SUPER_ADMIN / RECTORATE).
+model RoleAssignment {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  tenantId     String?   @map("tenant_id") @db.Uuid
+  role         RoleCode
+  instituteId  String?   @map("institute_id") @db.Uuid
+  departmentId String?   @map("department_id") @db.Uuid
+  orgUnitId    String?   @map("org_unit_id") @db.Uuid
+  dormitoryId  String?   @map("dormitory_id") @db.Uuid
+  /// TTL for guests and temporary duties.
+  expiresAt    DateTime? @map("expires_at")
+  grantedById  String?   @map("granted_by_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  user      User    @relation("RoleAssignee", fields: [userId], references: [id], onDelete: Cascade)
+  grantedBy User?   @relation("RoleGrantor", fields: [grantedById], references: [id], onDelete: SetNull)
+  tenant    Tenant? @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([tenantId, role])
+  @@map("role_assignments")
+}
+
+/// Admin-authored ABAC rule. `condition` uses the JSON DSL in packages/policy-engine.
+model AbacPolicy {
+  id            String       @id @default(uuid()) @db.Uuid
+  tenantId      String?      @map("tenant_id") @db.Uuid
+  key           String       @unique
+  description   String?
+  effect        PolicyEffect
+  actions       String[]
+  resourceTypes String[]     @map("resource_types")
+  condition     Json
+  priority      Int          @default(0)
+  enabled       Boolean      @default(true)
+  version       Int          @default(1)
+  createdById   String?      @map("created_by_id") @db.Uuid
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("abac_policies")
+}
+
+// ─────────────────────────── Messaging ───────────────────────────
+
+model Channel {
+  id                String      @id @default(uuid()) @db.Uuid
+  tenantId          String      @map("tenant_id") @db.Uuid
+  type              ChannelType
+  e2eeMode          E2eeMode    @default(DISABLED) @map("e2ee_mode")
+  nameUk            String?     @map("name_uk")
+  nameEn            String?     @map("name_en")
+  topic             String?
+  confidential      Boolean     @default(false)
+  /// Official Rectorate / Academic Council channels get the navy badge.
+  isOfficial        Boolean     @default(false) @map("is_official")
+  /// Threads (гілки) are required for topics and lab works in course channels.
+  threadsRequired   Boolean     @default(false) @map("threads_required")
+  /// Ephemeral TTL for OPTIONAL E2EE chats: 3600, 86400 or 604800 seconds.
+  messageTtlSeconds Int?        @map("message_ttl_seconds")
+  archivedAt        DateTime?   @map("archived_at")
+  /// Course channels auto-archive at semester end.
+  autoArchiveAt     DateTime?   @map("auto_archive_at")
+  instituteId       String?     @map("institute_id") @db.Uuid
+  departmentId      String?     @map("department_id") @db.Uuid
+  orgUnitId         String?     @map("org_unit_id") @db.Uuid
+  dormitoryId       String?     @map("dormitory_id") @db.Uuid
+  academicGroupId   String?     @map("academic_group_id") @db.Uuid
+  courseOfferingId  String?     @unique @map("course_offering_id") @db.Uuid
+  createdById       String?     @map("created_by_id") @db.Uuid
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  institute      Institute?      @relation(fields: [instituteId], references: [id], onDelete: SetNull)
+  department     Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  orgUnit        OrgUnit?        @relation(fields: [orgUnitId], references: [id], onDelete: SetNull)
+  dormitory      Dormitory?      @relation(fields: [dormitoryId], references: [id], onDelete: SetNull)
+  academicGroup  AcademicGroup?  @relation(fields: [academicGroupId], references: [id], onDelete: SetNull)
+  courseOffering CourseOffering? @relation(fields: [courseOfferingId], references: [id], onDelete: SetNull)
+  members        ChannelMember[]
+  messages       Message[]
+  files          FileObject[]
+
+  @@index([tenantId, type])
+  @@map("channels")
+}
+
+model ChannelMember {
+  channelId  String     @map("channel_id") @db.Uuid
+  userId     String     @map("user_id") @db.Uuid
+  role       MemberRole @default(MEMBER)
+  joinedAt   DateTime   @default(now()) @map("joined_at")
+  /// Guests / temporary participants.
+  expiresAt  DateTime?  @map("expires_at")
+  mutedUntil DateTime?  @map("muted_until")
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([channelId, userId])
+  @@index([userId])
+  @@map("channel_members")
+}
+
+model Message {
+  id           String    @id @default(uuid()) @db.Uuid
+  channelId    String    @map("channel_id") @db.Uuid
+  senderId     String    @map("sender_id") @db.Uuid
+  threadRootId String?   @map("thread_root_id") @db.Uuid
+  /// Plaintext body: only for E2EE DISABLED channels (searchable, archivable).
+  body         String?
+  /// Opaque ciphertext produced on the client by libsignal / vodozemac.
+  ciphertext   Bytes?
+  /// Priority alerts (Civil Protection) bypass DND and Quiet Hours.
+  isPriority   Boolean   @default(false) @map("is_priority")
+  expiresAt    DateTime? @map("expires_at")
+  editedAt     DateTime? @map("edited_at")
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  channel     Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  sender      User         @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  threadRoot  Message?     @relation("Thread", fields: [threadRootId], references: [id], onDelete: SetNull)
+  replies     Message[]    @relation("Thread")
+  attachments FileObject[]
+
+  @@index([channelId, createdAt])
+  @@index([expiresAt])
+  @@map("messages")
+}
+
+model QuietHoursSchedule {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @unique @map("user_id") @db.Uuid
+  timezone      String   @default("Europe/Kyiv")
+  /// Minutes from midnight. 18:00 = 1080, 08:30 = 510.
+  startMinute   Int      @default(1080) @map("start_minute")
+  endMinute     Int      @default(510) @map("end_minute")
+  /// ISO weekdays (1 = Monday) the schedule applies to.
+  weekdays      Int[]    @default([1, 2, 3, 4, 5])
+  /// Hold student messages into a morning digest.
+  digestEnabled Boolean  @default(true) @map("digest_enabled")
+  enabled       Boolean  @default(true)
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("quiet_hours_schedules")
+}
+
+// ───────────────────────── Files & documents ─────────────────────────
+
+model FileObject {
+  id           String         @id @default(uuid()) @db.Uuid
+  tenantId     String         @map("tenant_id") @db.Uuid
+  channelId    String?        @map("channel_id") @db.Uuid
+  messageId    String?        @map("message_id") @db.Uuid
+  uploaderId   String         @map("uploader_id") @db.Uuid
+  fileName     String         @map("file_name")
+  mimeType     String         @map("mime_type")
+  sizeBytes    BigInt         @map("size_bytes")
+  sha256       String
+  /// Object key in the quarantine bucket until ClamAV marks it CLEAN.
+  storageKey   String         @map("storage_key")
+  /// Key of the CDR-sanitized copy served to the Secure PDF Viewer.
+  sanitizedKey String?        @map("sanitized_key")
+  scanStatus   FileScanStatus @default(PENDING) @map("scan_status")
+  cdrStatus    CdrStatus      @default(NOT_REQUIRED) @map("cdr_status")
+  /// DLP view-only: no download, no print, no copy; watermarked rendering.
+  confidential Boolean        @default(false)
+  createdAt    DateTime       @default(now()) @map("created_at")
+
+  tenant      Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  channel     Channel?            @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  message     Message?            @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  uploader    User                @relation(fields: [uploaderId], references: [id], onDelete: Restrict)
+  annotations PdfAnnotation[]
+  signatures  DocumentSignature[]
+  approvals   ApprovalRoute[]
+
+  @@index([tenantId, channelId])
+  @@map("file_objects")
+}
+
+/// JSON annotation layer: never modifies the original file bytes.
+model PdfAnnotation {
+  id        String   @id @default(uuid()) @db.Uuid
+  fileId    String   @map("file_id") @db.Uuid
+  authorId  String   @map("author_id") @db.Uuid
+  page      Int
+  /// { kind: "highlight" | "comment", rects: [...], text?: string, color?: string }
+  payload   Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  file FileObject @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([fileId, page])
+  @@map("pdf_annotations")
+}
+
+// ─────────────────────────── PKI & signatures ───────────────────────────
+
+/// Certificates issued by the internal university CA from a client-generated CSR,
+/// or registered external QES certificates. Never stores private keys.
+model UserCertificate {
+  id                String                @id @default(uuid()) @db.Uuid
+  userId            String                @map("user_id") @db.Uuid
+  provider          SignatureProviderKind
+  serialNumber      String                @unique @map("serial_number")
+  subjectDn         String                @map("subject_dn")
+  issuerDn          String                @map("issuer_dn")
+  certificatePem    String                @map("certificate_pem")
+  fingerprintSha256 String                @unique @map("fingerprint_sha256")
+  notBefore         DateTime              @map("not_before")
+  notAfter          DateTime              @map("not_after")
+  status            CertificateStatus     @default(ACTIVE)
+  revokedAt         DateTime?             @map("revoked_at")
+  revocationReason  RevocationReason?     @map("revocation_reason")
+  createdAt         DateTime              @default(now()) @map("created_at")
+
+  user       User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  signatures DocumentSignature[]
+
+  @@index([userId, status])
+  @@index([status, revokedAt])
+  @@map("user_certificates")
+}
+
+model DocumentSignature {
+  id              String                @id @default(uuid()) @db.Uuid
+  fileId          String                @map("file_id") @db.Uuid
+  certificateId   String                @map("certificate_id") @db.Uuid
+  provider        SignatureProviderKind
+  /// PAdES (embedded) or CAdES detached `.p7s` object key.
+  format          String
+  signatureKey    String                @map("signature_key")
+  /// Hash of the signed bytes at signing time, re-checked on every verification.
+  signedDigest    String                @map("signed_digest")
+  digestAlgorithm String                @map("digest_algorithm")
+  tspTimestamp    DateTime?             @map("tsp_timestamp")
+  tspToken        Bytes?                @map("tsp_token")
+  createdAt       DateTime              @default(now()) @map("created_at")
+
+  file         FileObject      @relation(fields: [fileId], references: [id], onDelete: Restrict)
+  certificate  UserCertificate @relation(fields: [certificateId], references: [id], onDelete: Restrict)
+  approvalStep ApprovalStep?
+
+  @@index([fileId])
+  @@map("document_signatures")
+}
+
+/// Multi-step approval route, e.g. Student -> Head of Department -> Institute Director.
+model ApprovalRoute {
+  id          String         @id @default(uuid()) @db.Uuid
+  fileId      String         @map("file_id") @db.Uuid
+  title       String
+  status      ApprovalStatus @default(PENDING)
+  createdById String         @map("created_by_id") @db.Uuid
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  file  FileObject     @relation(fields: [fileId], references: [id], onDelete: Restrict)
+  steps ApprovalStep[]
+
+  @@map("approval_routes")
+}
+
+model ApprovalStep {
+  id          String         @id @default(uuid()) @db.Uuid
+  routeId     String         @map("route_id") @db.Uuid
+  position    Int
+  approverId  String         @map("approver_id") @db.Uuid
+  status      ApprovalStatus @default(PENDING)
+  signatureId String?        @unique @map("signature_id") @db.Uuid
+  comment     String?
+  decidedAt   DateTime?      @map("decided_at")
+
+  route     ApprovalRoute      @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  approver  User               @relation(fields: [approverId], references: [id], onDelete: Restrict)
+  signature DocumentSignature? @relation(fields: [signatureId], references: [id], onDelete: SetNull)
+
+  @@unique([routeId, position])
+  @@map("approval_steps")
+}
+
+// ─────────────────────────── Audit ───────────────────────────
+
+/// Append-only, hash-chained, SIEM-compatible audit log.
+/// UPDATE / DELETE / TRUNCATE are blocked by a trigger (see migrations).
+model AuditLog {
+  id           BigInt       @id @default(autoincrement())
+  occurredAt   DateTime     @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  tenantId     String?      @map("tenant_id") @db.Uuid
+  actorId      String?      @map("actor_id") @db.Uuid
+  action       String
+  resourceType String?      @map("resource_type")
+  resourceId   String?      @map("resource_id")
+  outcome      AuditOutcome
+  reason       String?
+  ip           String?
+  userAgent    String?      @map("user_agent")
+  requestId    String?      @map("request_id")
+  metadata     Json?
+  /// SHA-256 of the previous row's hash + this row's canonical content.
+  prevHash     String?      @map("prev_hash")
+  hash         String       @unique
+
+  @@index([tenantId, occurredAt])
+  @@index([actorId, occurredAt])
+  @@index([action, occurredAt])
+  @@map("audit_logs")
+}

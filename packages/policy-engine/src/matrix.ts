@@ -1,0 +1,89 @@
+import { Action, RoleCode } from '@puet/shared';
+import type { PermissionMatrix } from './types';
+
+const A = Action;
+
+const MEMBER_BASICS = [
+  A.CHANNEL_READ,
+  A.MESSAGE_READ,
+  A.MESSAGE_SEND,
+  A.MESSAGE_EDIT,
+  A.MESSAGE_DELETE,
+  A.FILE_UPLOAD,
+  A.FILE_VIEW,
+  A.FILE_DOWNLOAD,
+  A.USER_PROFILE_READ,
+  A.USER_PHONE_READ,
+  A.USER_DORM_ROOM_READ,
+  A.CERTIFICATE_REQUEST,
+  A.DOCUMENT_SIGN,
+  A.VOTE_CAST,
+] as const;
+
+const STAFF_BASICS = [
+  ...MEMBER_BASICS,
+  A.DM_START,
+  A.DIRECTORY_SEARCH,
+  A.CHANNEL_CREATE,
+  A.DOCUMENT_APPROVE,
+  A.QUIET_HOURS_MANAGE,
+] as const;
+
+/**
+ * Default role -> action matrix. The No-Code Admin Panel (Phase 2) stores an
+ * override in `role_permissions`; this default is the fallback and the seed.
+ *
+ * RBAC only says "this role may attempt this kind of action". Scope, membership,
+ * tenant isolation and minor protection are enforced afterwards by guardrails.
+ */
+export const DEFAULT_PERMISSION_MATRIX: PermissionMatrix = {
+  [RoleCode.SUPER_ADMIN]: [
+    A.CHANNEL_READ,
+    A.CHANNEL_CREATE,
+    A.CHANNEL_UPDATE,
+    A.CHANNEL_ARCHIVE,
+    A.CHANNEL_MEMBERS_MANAGE,
+    A.DIRECTORY_SEARCH,
+    A.USER_PROFILE_READ,
+    A.STRUCTURE_MANAGE,
+    A.ROLE_ASSIGN,
+    A.POLICY_MANAGE,
+    A.AUDIT_READ,
+    A.CERTIFICATE_ISSUE,
+    A.CERTIFICATE_REVOKE,
+    A.DM_START,
+    A.MESSAGE_SEND,
+    A.MESSAGE_READ,
+  ],
+  [RoleCode.RECTORATE]: [
+    ...STAFF_BASICS,
+    A.BROADCAST_PUBLISH,
+    A.CHANNEL_MODERATE,
+    A.CHANNEL_MEMBERS_MANAGE,
+    A.VOTE_MANAGE,
+    A.AUDIT_READ,
+  ],
+  [RoleCode.INSTITUTE_DIRECTOR]: [
+    ...STAFF_BASICS,
+    A.BROADCAST_PUBLISH,
+    A.CHANNEL_UPDATE,
+    A.CHANNEL_ARCHIVE,
+    A.CHANNEL_MODERATE,
+    A.CHANNEL_MEMBERS_MANAGE,
+  ],
+  [RoleCode.DEPARTMENT_HEAD]: [
+    ...STAFF_BASICS,
+    A.CHANNEL_UPDATE,
+    A.CHANNEL_MODERATE,
+    A.CHANNEL_MEMBERS_MANAGE,
+  ],
+  [RoleCode.LECTURER]: [...STAFF_BASICS, A.CHANNEL_MODERATE],
+  [RoleCode.ADMIN_STAFF]: [...STAFF_BASICS],
+  [RoleCode.TRUST_SERVICE_OFFICER]: [...STAFF_BASICS, A.CHANNEL_MODERATE],
+  [RoleCode.CIVIL_PROTECTION_OFFICER]: [...STAFF_BASICS, A.EMERGENCY_ALERT_SEND],
+  [RoleCode.FACILITIES_STAFF]: [...STAFF_BASICS],
+  [RoleCode.DORM_COMMANDANT]: [...STAFF_BASICS, A.BROADCAST_PUBLISH, A.CHANNEL_MODERATE],
+  [RoleCode.STUDENT]: [...MEMBER_BASICS, A.DM_START, A.DIRECTORY_SEARCH, A.CHANNEL_CREATE],
+  [RoleCode.GROUP_LEADER]: [...MEMBER_BASICS, A.DM_START, A.DIRECTORY_SEARCH, A.CHANNEL_CREATE],
+  [RoleCode.GUEST]: [A.CHANNEL_READ, A.MESSAGE_READ, A.MESSAGE_SEND, A.FILE_VIEW],
+};

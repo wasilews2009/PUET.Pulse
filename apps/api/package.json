@@ -1,0 +1,32 @@
+{
+  "name": "@puet/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PUET.Pulse API (NestJS): REST + WebSocket gateway with zero-trust guards",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.6",
+    "@nestjs/core": "^11.1.6",
+    "@nestjs/platform-express": "^11.1.6",
+    "@nestjs/websockets": "^11.1.6",
+    "@puet/database": "workspace:*",
+    "@puet/policy-engine": "workspace:*",
+    "@puet/shared": "workspace:*",
+    "helmet": "^8.1.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
