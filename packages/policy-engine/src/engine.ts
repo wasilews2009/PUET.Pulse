@@ -59,7 +59,6 @@ const CHANNEL_WRITE_ACTIONS: ReadonlySet<string> = new Set([
   Action.MESSAGE_SEND,
   Action.FILE_UPLOAD,
   Action.MESSAGE_EDIT,
-  Action.DOCUMENT_SIGN,
   Action.VOTE_CAST,
 ]);
 
@@ -351,11 +350,15 @@ export class PolicyEngine {
       return deny('channel.not_moderator');
     }
 
+    // Approvers of a document's approval route may read and sign that one file.
+    const approverOfFile = resource.type === ResourceType.FILE && resource.isApprover === true;
+
     if (CHANNEL_READ_ACTIONS.has(action)) {
       if (action === Action.FILE_DOWNLOAD && resource.confidential) {
         return deny('dlp.view_only');
       }
       if (resource.isMember) return null;
+      if (approverOfFile && (action === Action.FILE_VIEW || action === Action.FILE_DOWNLOAD)) return null;
       // Exceptional metadata access to a private room needs a recorded commission decision.
       if (
         isPrivate &&
@@ -396,8 +399,32 @@ export class PolicyEngine {
       return resource.archived ? deny('channel.archived') : null;
     }
 
+    if (action === Action.FILE_ANNOTATE) {
+      if (resource.type !== ResourceType.FILE) return deny('resource.type_mismatch');
+      if (!resource.isMember && !approverOfFile) return deny('membership.required');
+      return resource.archived ? deny('channel.archived') : null;
+    }
+
+    if (action === Action.DOCUMENT_SIGN) {
+      if (resource.type !== ResourceType.FILE) return deny('resource.type_mismatch');
+      if (approverOfFile) return null;
+      if (!resource.isMember) return deny('membership.required');
+      if (resource.archived) return deny('channel.archived');
+      if (resource.memberRole === MemberRole.READ_ONLY) return deny('channel.read_only');
+      return null;
+    }
+
+    if (action === Action.APPROVAL_ROUTE_CREATE) {
+      if (resource.type !== ResourceType.FILE) return deny('resource.type_mismatch');
+      if (!resource.isMember) return deny('membership.required');
+      if (resource.ownerId !== principal.userId) return deny('ownership.required');
+      return resource.archived ? deny('channel.archived') : null;
+    }
+
+    // Only an approver named on the file's route decides; channel membership is not enough.
     if (action === Action.DOCUMENT_APPROVE) {
-      return resource.isMember ? null : deny('membership.required');
+      if (resource.type !== ResourceType.FILE) return deny('resource.type_mismatch');
+      return approverOfFile ? null : deny('approval.not_approver');
     }
 
     return null;

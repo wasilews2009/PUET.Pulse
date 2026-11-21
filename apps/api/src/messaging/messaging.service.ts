@@ -66,7 +66,7 @@ const notExpired = (now: Date) => ({ OR: [{ expiresAt: null }, { expiresAt: { gt
 const activeMembership = (now: Date) => ({ OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] });
 
 /** Members that may receive events of a channel right now. Resolved per event (zero trust). */
-async function currentRecipients(prisma: PrismaService, channelId: string, now = new Date()): Promise<string[]> {
+export async function currentRecipients(prisma: PrismaService, channelId: string, now = new Date()): Promise<string[]> {
   const rows = await prisma.channelMember.findMany({
     where: { channelId, ...activeMembership(now), user: { status: 'ACTIVE' } },
     select: { userId: true },

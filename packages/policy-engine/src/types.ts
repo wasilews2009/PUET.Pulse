@@ -75,6 +75,8 @@ export interface Resource {
   /** Whether the principal is an active member of the resource's channel. */
   isMember?: boolean;
   memberRole?: MemberRole;
+  /** Whether the principal is an approver on an approval route of this file (computed server-side). */
+  isApprover?: boolean;
   channelType?: ChannelType;
   e2eeMode?: E2eeMode;
   confidential?: boolean;

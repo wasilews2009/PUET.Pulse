@@ -159,6 +159,10 @@ export const Action = {
   DEVICE_MANAGE: 'device.manage',
   /** Query / claim other users' public device keys and send them to-device envelopes. */
   E2EE_KEYS_ACCESS: 'e2ee.keys.access',
+  /** Phase 4: JSON annotations on a PDF (never modifies the file). */
+  FILE_ANNOTATE: 'file.annotate',
+  /** Phase 4: start a multi-step approval route for one's own document. */
+  APPROVAL_ROUTE_CREATE: 'approval.route.create',
 } as const;
 export type Action = (typeof Action)[keyof typeof Action];
 

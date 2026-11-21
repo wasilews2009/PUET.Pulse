@@ -1,0 +1,19 @@
+{
+  "name": "@puet/signing",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Client-side УЕП signing for PUET.Pulse: WebCrypto key pairs that never leave the device, PKCS#10 CSR, CAdES-BES detached CMS via PKI.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "asn1js": "3.0.6",
+    "pkijs": "3.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

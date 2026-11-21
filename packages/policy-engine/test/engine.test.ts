@@ -422,3 +422,52 @@ describe('own-account resources (Phase 3: devices, keys, presence)', () => {
     expect(engine.can(student(), Action.QUIET_HOURS_MANAGE, self('u-student'), env())).toBe(false);
   });
 });
+
+describe('documents, signatures and approval routes (Phase 4)', () => {
+  const file = (over: Record<string, unknown> = {}) => ({ ...channel(over), type: ResourceType.FILE, id: 'f-1' });
+  const outsider = (over: Record<string, unknown> = {}) => file({ isMember: false, memberRole: undefined, ...over });
+
+  it('IDOR: a non-member who is not an approver cannot view, sign or annotate a file', () => {
+    const s = student();
+    expect(engine.evaluate(s, Action.FILE_VIEW, outsider(), env()).reason).toBe('membership.required');
+    expect(engine.evaluate(s, Action.DOCUMENT_SIGN, outsider(), env()).reason).toBe('membership.required');
+    expect(engine.evaluate(s, Action.FILE_ANNOTATE, outsider(), env()).reason).toBe('membership.required');
+  });
+
+  it('an approver named on the route may view and sign the file without channel membership', () => {
+    const l = lecturer();
+    const f = outsider({ isApprover: true });
+    expect(engine.can(l, Action.FILE_VIEW, f, env())).toBe(true);
+    expect(engine.can(l, Action.DOCUMENT_SIGN, f, env())).toBe(true);
+    expect(engine.can(l, Action.DOCUMENT_APPROVE, f, env())).toBe(true);
+  });
+
+  it('approval: channel membership alone does not let anyone decide a route step', () => {
+    expect(engine.evaluate(lecturer(), Action.DOCUMENT_APPROVE, file(), env()).reason).toBe('approval.not_approver');
+  });
+
+  it('DLP: an approver still cannot download a confidential file', () => {
+    expect(engine.evaluate(lecturer(), Action.FILE_DOWNLOAD, outsider({ isApprover: true, confidential: true }), env()).reason).toBe(
+      'dlp.view_only',
+    );
+  });
+
+  it('only the uploader starts an approval route for a document', () => {
+    const s = student();
+    expect(engine.can(s, Action.APPROVAL_ROUTE_CREATE, file({ ownerId: s.userId }), env())).toBe(true);
+    expect(engine.evaluate(s, Action.APPROVAL_ROUTE_CREATE, file({ ownerId: 'someone-else' }), env()).reason).toBe(
+      'ownership.required',
+    );
+  });
+
+  it('read-only members and archived channels cannot sign', () => {
+    expect(engine.evaluate(student(), Action.DOCUMENT_SIGN, file({ memberRole: MemberRole.READ_ONLY }), env()).reason).toBe(
+      'channel.read_only',
+    );
+    expect(engine.evaluate(student(), Action.DOCUMENT_SIGN, file({ archived: true }), env()).reason).toBe('channel.archived');
+  });
+
+  it('signing applies to files only, never to a whole channel', () => {
+    expect(engine.evaluate(student(), Action.DOCUMENT_SIGN, channel(), env()).reason).toBe('resource.type_mismatch');
+  });
+});

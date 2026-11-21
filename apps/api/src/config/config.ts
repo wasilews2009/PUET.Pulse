@@ -51,6 +51,27 @@ const schema = z.object({
     .default('pulse.puet.edu.ua'),
   /** Background jobs (digests, TTL purge, course archive). Disable on read-only replicas. */
   JOBS_ENABLED: z.enum(['true', 'false']).default('true'),
+  // ── Phase 4: files, PDF viewer, PKI, QES ──
+  S3_ENDPOINT: z.string().url().default('http://localhost:9000'),
+  S3_REGION: z.string().default('us-east-1'),
+  S3_ACCESS_KEY_ID: z.string().default(''),
+  S3_SECRET_ACCESS_KEY: z.string().default(''),
+  S3_BUCKET_ATTACHMENTS: z.string().default('puet-attachments'),
+  S3_BUCKET_QUARANTINE: z.string().default('puet-quarantine'),
+  CLAMAV_HOST: z.string().default('localhost'),
+  CLAMAV_PORT: z.coerce.number().int().min(1).max(65535).default(3310),
+  FILE_MAX_MB: z.coerce.number().int().min(1).max(500).default(50),
+  /** Internal CA (УЕП): PEM certificate and PKCS#8 private key, outside the repository. */
+  PKI_CA_CERT_FILE: z.string().optional(),
+  PKI_CA_KEY_FILE: z.string().optional(),
+  /** Public base URL embedded in certificates for CRL / OCSP / CA issuer and in verification QR codes. */
+  PKI_PUBLIC_URL: z.string().url().optional(),
+  PKI_CERT_DAYS: z.coerce.number().int().min(30).max(825).default(365),
+  /** Secret for document verification codes (QR). At least 32 characters. */
+  VERIFY_CODE_SECRET: z.string().min(32).optional(),
+  /** On-premise QES gateway (IIT EUSignCP server) for КЕП. Unset: QES signing is unavailable. */
+  QES_GATEWAY_URL: z.string().url().optional(),
+  QES_GATEWAY_TOKEN: z.string().min(16).optional(),
 });
 
 export interface AppConfig {
@@ -71,6 +92,19 @@ export interface AppConfig {
   integrations: { clients: Map<string, IntegrationClientConfig>; toleranceSeconds: number };
   e2ee: { serverName: string };
   jobsEnabled: boolean;
+  files: {
+    maxBytes: number;
+    s3: { endpoint: string; region: string; accessKeyId: string; secretAccessKey: string; buckets: { attachments: string; quarantine: string } };
+    clamav: { host: string; port: number };
+  };
+  pki: {
+    caCertFile?: string;
+    caKeyFile?: string;
+    publicUrl: string;
+    certDays: number;
+    verifyCodeSecret?: string;
+    qes: { url: string; token: string } | null;
+  };
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -111,5 +145,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     },
     e2ee: { serverName: e.E2EE_SERVER_NAME },
     jobsEnabled: e.JOBS_ENABLED === 'true',
+    files: {
+      maxBytes: e.FILE_MAX_MB * 1024 * 1024,
+      s3: {
+        endpoint: e.S3_ENDPOINT,
+        region: e.S3_REGION,
+        accessKeyId: e.S3_ACCESS_KEY_ID,
+        secretAccessKey: e.S3_SECRET_ACCESS_KEY,
+        buckets: { attachments: e.S3_BUCKET_ATTACHMENTS, quarantine: e.S3_BUCKET_QUARANTINE },
+      },
+      clamav: { host: e.CLAMAV_HOST, port: e.CLAMAV_PORT },
+    },
+    pki: {
+      ...(e.PKI_CA_CERT_FILE ? { caCertFile: e.PKI_CA_CERT_FILE } : {}),
+      ...(e.PKI_CA_KEY_FILE ? { caKeyFile: e.PKI_CA_KEY_FILE } : {}),
+      publicUrl: (e.PKI_PUBLIC_URL ?? `${new URL(e.WEB_ORIGIN).origin}/api`).replace(/\/+$/, ''),
+      certDays: e.PKI_CERT_DAYS,
+      ...(e.VERIFY_CODE_SECRET ? { verifyCodeSecret: e.VERIFY_CODE_SECRET } : {}),
+      qes: e.QES_GATEWAY_URL && e.QES_GATEWAY_TOKEN ? { url: e.QES_GATEWAY_URL, token: e.QES_GATEWAY_TOKEN } : null,
+    },
   };
 }

@@ -201,6 +201,11 @@ enum RevocationReason {
   CESSATION_OF_OPERATION
 }
 
+enum AnnotationVisibility {
+  PRIVATE // only the author
+  SHARED // everyone who may view the file
+}
+
 enum ApprovalStatus {
   PENDING
   APPROVED
@@ -244,6 +249,7 @@ model Tenant {
   channels        Channel[]
   abacPolicies    AbacPolicy[]
   files           FileObject[]
+  approvalRoutes  ApprovalRoute[]
 
   @@map("tenants")
 }
@@ -519,6 +525,9 @@ model User {
   quietHours       QuietHoursSchedule?
   certificates     UserCertificate[]
   approvalSteps    ApprovalStep[]
+  approvalRoutes   ApprovalRoute[]     @relation("ApprovalRouteCreator")
+  signatures       DocumentSignature[] @relation("DocumentSigner")
+  annotations      PdfAnnotation[]     @relation("AnnotationAuthor")
   devices          Device[]
   crossSigningKeys CrossSigningKey[]
   keyBackups       KeyBackupVersion[]
@@ -914,7 +923,15 @@ model FileObject {
   /// Key of the CDR-sanitized copy served to the Secure PDF Viewer.
   sanitizedKey String?        @map("sanitized_key")
   scanStatus   FileScanStatus @default(PENDING) @map("scan_status")
+  scanAttempts Int            @default(0) @map("scan_attempts")
+  scannedAt    DateTime?      @map("scanned_at")
+  /// ClamAV signature name when INFECTED (never the file content).
+  malwareName  String?        @map("malware_name")
   cdrStatus    CdrStatus      @default(NOT_REQUIRED) @map("cdr_status")
+  /// SHA-256 and size of the bytes actually served and signed (the sanitized copy for PDFs).
+  servedSha256 String?        @map("served_sha256")
+  servedSize   BigInt?        @map("served_size")
+  pageCount    Int?           @map("page_count")
   /// DLP view-only: no download, no print, no copy; watermarked rendering.
   confidential Boolean        @default(false)
   createdAt    DateTime       @default(now()) @map("created_at")
@@ -928,21 +945,24 @@ model FileObject {
   approvals   ApprovalRoute[]
 
   @@index([tenantId, channelId])
+  @@index([scanStatus, createdAt])
   @@map("file_objects")
 }
 
 /// JSON annotation layer: never modifies the original file bytes.
 model PdfAnnotation {
-  id        String   @id @default(uuid()) @db.Uuid
-  fileId    String   @map("file_id") @db.Uuid
-  authorId  String   @map("author_id") @db.Uuid
-  page      Int
+  id         String               @id @default(uuid()) @db.Uuid
+  fileId     String               @map("file_id") @db.Uuid
+  authorId   String               @map("author_id") @db.Uuid
+  page       Int
+  visibility AnnotationVisibility @default(PRIVATE)
   /// { kind: "highlight" | "comment", rects: [...], text?: string, color?: string }
-  payload   Json
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  payload    Json
+  createdAt  DateTime             @default(now()) @map("created_at")
+  updatedAt  DateTime             @updatedAt @map("updated_at")
 
-  file FileObject @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  file   FileObject @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  author User       @relation("AnnotationAuthor", fields: [authorId], references: [id], onDelete: Restrict)
 
   @@index([fileId, page])
   @@map("pdf_annotations")
@@ -961,6 +981,8 @@ model UserCertificate {
   issuerDn          String                @map("issuer_dn")
   certificatePem    String                @map("certificate_pem")
   fingerprintSha256 String                @unique @map("fingerprint_sha256")
+  /// SHA-256 of the SubjectPublicKeyInfo: one key pair is certified only once.
+  publicKeySha256   String?               @unique @map("public_key_sha256")
   notBefore         DateTime              @map("not_before")
   notAfter          DateTime              @map("not_after")
   status            CertificateStatus     @default(ACTIVE)
@@ -977,24 +999,32 @@ model UserCertificate {
 }
 
 model DocumentSignature {
-  id              String                @id @default(uuid()) @db.Uuid
-  fileId          String                @map("file_id") @db.Uuid
-  certificateId   String                @map("certificate_id") @db.Uuid
-  provider        SignatureProviderKind
+  id                  String                @id @default(uuid()) @db.Uuid
+  fileId              String                @map("file_id") @db.Uuid
+  certificateId       String                @map("certificate_id") @db.Uuid
+  signerId            String                @map("signer_id") @db.Uuid
+  provider            SignatureProviderKind
   /// PAdES (embedded) or CAdES detached `.p7s` object key.
-  format          String
-  signatureKey    String                @map("signature_key")
+  format              String
+  signatureKey        String                @map("signature_key")
   /// Hash of the signed bytes at signing time, re-checked on every verification.
-  signedDigest    String                @map("signed_digest")
-  digestAlgorithm String                @map("digest_algorithm")
-  tspTimestamp    DateTime?             @map("tsp_timestamp")
-  tspToken        Bytes?                @map("tsp_token")
-  createdAt       DateTime              @default(now()) @map("created_at")
+  signedDigest        String                @map("signed_digest")
+  digestAlgorithm     String                @map("digest_algorithm")
+  /// Signing time claimed in the CMS signed attributes (informational for УЕП).
+  claimedSigningTime  DateTime?             @map("claimed_signing_time")
+  tspTimestamp        DateTime?             @map("tsp_timestamp")
+  tspToken            Bytes?                @map("tsp_token")
+  /// Revocation check made at signing time: "internal" (own CA), "ocsp" (QES gateway).
+  revocationSource    String                @map("revocation_source")
+  revocationCheckedAt DateTime              @map("revocation_checked_at")
+  createdAt           DateTime              @default(now()) @map("created_at")
 
   file         FileObject      @relation(fields: [fileId], references: [id], onDelete: Restrict)
   certificate  UserCertificate @relation(fields: [certificateId], references: [id], onDelete: Restrict)
+  signer       User            @relation("DocumentSigner", fields: [signerId], references: [id], onDelete: Restrict)
   approvalStep ApprovalStep?
 
+  @@unique([fileId, certificateId])
   @@index([fileId])
   @@map("document_signatures")
 }
@@ -1002,6 +1032,7 @@ model DocumentSignature {
 /// Multi-step approval route, e.g. Student -> Head of Department -> Institute Director.
 model ApprovalRoute {
   id          String         @id @default(uuid()) @db.Uuid
+  tenantId    String         @map("tenant_id") @db.Uuid
   fileId      String         @map("file_id") @db.Uuid
   title       String
   status      ApprovalStatus @default(PENDING)
@@ -1009,27 +1040,33 @@ model ApprovalRoute {
   createdAt   DateTime       @default(now()) @map("created_at")
   updatedAt   DateTime       @updatedAt @map("updated_at")
 
-  file  FileObject     @relation(fields: [fileId], references: [id], onDelete: Restrict)
-  steps ApprovalStep[]
+  file      FileObject     @relation(fields: [fileId], references: [id], onDelete: Restrict)
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  createdBy User           @relation("ApprovalRouteCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  steps     ApprovalStep[]
 
+  @@index([fileId, status])
   @@map("approval_routes")
 }
 
 model ApprovalStep {
-  id          String         @id @default(uuid()) @db.Uuid
-  routeId     String         @map("route_id") @db.Uuid
-  position    Int
-  approverId  String         @map("approver_id") @db.Uuid
-  status      ApprovalStatus @default(PENDING)
-  signatureId String?        @unique @map("signature_id") @db.Uuid
-  comment     String?
-  decidedAt   DateTime?      @map("decided_at")
+  id               String         @id @default(uuid()) @db.Uuid
+  routeId          String         @map("route_id") @db.Uuid
+  position         Int
+  approverId       String         @map("approver_id") @db.Uuid
+  /// Approving this step requires an electronic signature of the approver on the file.
+  requireSignature Boolean        @default(true) @map("require_signature")
+  status           ApprovalStatus @default(PENDING)
+  signatureId      String?        @unique @map("signature_id") @db.Uuid
+  comment          String?
+  decidedAt        DateTime?      @map("decided_at")
 
   route     ApprovalRoute      @relation(fields: [routeId], references: [id], onDelete: Cascade)
   approver  User               @relation(fields: [approverId], references: [id], onDelete: Restrict)
   signature DocumentSignature? @relation(fields: [signatureId], references: [id], onDelete: SetNull)
 
   @@unique([routeId, position])
+  @@index([approverId, status])
   @@map("approval_steps")
 }
 
