@@ -13,7 +13,10 @@ import { PrismaService } from '../prisma/prisma.service';
 export class PrincipalFactory {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  async build(userId: string, opts: { mfaVerified: boolean }): Promise<Principal | null> {
+  async build(
+    userId: string,
+    opts: { mfaVerified: boolean },
+  ): Promise<{ principal: Principal; sessionEpoch: number } | null> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: {
@@ -39,7 +42,7 @@ export class PrincipalFactory {
     const student = user.studentProfile;
     const staff = user.staffProfile;
 
-    return {
+    const principal: Principal = {
       userId: user.id,
       tenantId: user.tenantId,
       kind: user.kind as PrincipalKind,
@@ -58,5 +61,6 @@ export class PrincipalFactory {
         staff?.id ?? null,
       ),
     };
+    return { principal, sessionEpoch: user.sessionEpoch };
   }
 }

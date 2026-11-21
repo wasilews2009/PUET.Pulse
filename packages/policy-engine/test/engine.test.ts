@@ -366,3 +366,28 @@ describe('condition evaluator safety', () => {
     expect(validateCondition({ unknownOp: [] })).not.toBeNull();
   });
 });
+
+describe('machine principals (ЄДЕБО / HR sync)', () => {
+  const bot = principal({
+    userId: 'svc-edebo',
+    kind: PrincipalKind.SERVICE_BOT,
+    roles: [{ role: RoleCode.INTEGRATION, tenantId: T_MAIN }],
+    academicGroupIds: [],
+  });
+  const integration = { type: ResourceType.INTEGRATION, tenantId: T_MAIN };
+
+  it('an integration client may ingest sync data into its own tenant only', () => {
+    expect(engine.can(bot, Action.SYNC_INGEST, integration, env())).toBe(true);
+    expect(engine.can(bot, Action.SYNC_INGEST, { ...integration, tenantId: T_LYCEUM }, env())).toBe(false);
+  });
+
+  it('an integration client cannot read channels or the directory', () => {
+    expect(engine.evaluate(bot, Action.MESSAGE_READ, channel(), env()).allowed).toBe(false);
+    expect(engine.can(bot, Action.DIRECTORY_SEARCH, { type: ResourceType.DIRECTORY, tenantId: T_MAIN }, env())).toBe(false);
+  });
+
+  it('a human cannot call sync endpoints even with a forged INTEGRATION grant', () => {
+    const human = superAdmin({ roles: [{ role: RoleCode.INTEGRATION, tenantId: T_MAIN }] });
+    expect(engine.evaluate(human, Action.SYNC_INGEST, integration, env()).reason).toBe('principal.kind_mismatch');
+  });
+});

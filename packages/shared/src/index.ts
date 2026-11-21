@@ -41,6 +41,8 @@ export const RoleCode = {
   GROUP_LEADER: 'GROUP_LEADER',
   /** 9. External stakeholders with TTL-limited access. */
   GUEST: 'GUEST',
+  /** Machine principal for ЄДЕБО / HR / ERP webhooks. Never assigned to a person. */
+  INTEGRATION: 'INTEGRATION',
 } as const;
 export type RoleCode = (typeof RoleCode)[keyof typeof RoleCode];
 
@@ -149,6 +151,8 @@ export const Action = {
   CERTIFICATE_ISSUE: 'certificate.issue',
   CERTIFICATE_REVOKE: 'certificate.revoke',
   QUIET_HOURS_MANAGE: 'quiet_hours.manage',
+  SESSION_READ: 'session.read',
+  SYNC_INGEST: 'sync.ingest',
 } as const;
 export type Action = (typeof Action)[keyof typeof Action];
 
@@ -165,5 +169,21 @@ export const ResourceType = {
   POLICY: 'policy',
   AUDIT: 'audit',
   CERTIFICATE: 'certificate',
+  SESSION: 'session',
+  INTEGRATION: 'integration',
 } as const;
+
+/** Roles the ЄДЕБО / HR sync may grant. RECTORATE and SUPER_ADMIN are granted only by an administrator. */
+export const SYNC_ASSIGNABLE_ROLES: readonly RoleCode[] = [
+  RoleCode.INSTITUTE_DIRECTOR,
+  RoleCode.DEPARTMENT_HEAD,
+  RoleCode.LECTURER,
+  RoleCode.ADMIN_STAFF,
+  RoleCode.TRUST_SERVICE_OFFICER,
+  RoleCode.CIVIL_PROTECTION_OFFICER,
+  RoleCode.FACILITIES_STAFF,
+  RoleCode.DORM_COMMANDANT,
+  RoleCode.STUDENT,
+  RoleCode.GROUP_LEADER,
+];
 export type ResourceType = (typeof ResourceType)[keyof typeof ResourceType];

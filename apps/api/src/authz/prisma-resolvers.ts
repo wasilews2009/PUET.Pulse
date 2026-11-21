@@ -119,7 +119,11 @@ export class UserTargetResolver implements ResourceResolver {
   }
 }
 
-/** Tenant-level resources with no id: they always resolve to the caller's own tenant. */
+/**
+ * Tenant-level resources. Without an id they resolve to the caller's own tenant;
+ * with an id (e.g. `/admin/tenants/:tenantId/...`) the tenant must exist, and the
+ * policy engine then decides whether the caller's grants cover it.
+ */
 @Injectable()
 export class TenantResourceResolver implements ResourceResolver {
   readonly types = [
@@ -129,10 +133,16 @@ export class TenantResourceResolver implements ResourceResolver {
     ResourceType.POLICY,
     ResourceType.AUDIT,
     ResourceType.CERTIFICATE,
+    ResourceType.SESSION,
+    ResourceType.INTEGRATION,
   ] as const;
 
-  async resolve(type: ResourceType, _id: string | undefined, principal: Principal): Promise<Resource> {
-    return { type, tenantId: principal.tenantId };
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+
+  async resolve(type: ResourceType, id: string | undefined, principal: Principal): Promise<Resource | null> {
+    if (!id) return { type, tenantId: principal.tenantId };
+    const tenant = await this.prisma.tenant.findUnique({ where: { id }, select: { id: true } });
+    return tenant ? { type, id, tenantId: tenant.id } : null;
   }
 }
 

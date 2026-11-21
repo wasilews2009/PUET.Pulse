@@ -35,6 +35,7 @@ const SCOPED_ACTIONS: ReadonlySet<string> = new Set([
   Action.CERTIFICATE_ISSUE,
   Action.CERTIFICATE_REVOKE,
   Action.VOTE_MANAGE,
+  Action.SYNC_INGEST,
 ]);
 
 /** Channel administration: needs OWNER/MODERATOR membership or a covering oversight grant. */
@@ -253,6 +254,11 @@ export class PolicyEngine {
     grants: RoleGrant[],
     candidates: RoleGrant[],
   ): Decision | null {
+    // Machine principals only ingest sync data, and only machines may do so.
+    if ((principal.kind === PrincipalKind.SERVICE_BOT) !== (action === Action.SYNC_INGEST)) {
+      return deny('principal.kind_mismatch');
+    }
+
     // Guests: complete isolation from the internal directory and service chats.
     if (principal.kind === PrincipalKind.GUEST) {
       if (

@@ -39,6 +39,7 @@ const AUDITED_ALLOW: ReadonlySet<string> = new Set([
   Action.BROADCAST_PUBLISH,
   Action.CHANNEL_MEMBERS_MANAGE,
   Action.CHANNEL_ARCHIVE,
+  Action.SYNC_INGEST,
 ]);
 
 interface Extracted {

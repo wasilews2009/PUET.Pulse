@@ -98,6 +98,25 @@ enum RoleCode {
   STUDENT
   GROUP_LEADER
   GUEST
+  INTEGRATION
+}
+
+/// Who created a role grant. The sync replaces only its own grants and never touches ADMIN ones.
+enum RoleSource {
+  SYNC
+  ADMIN
+}
+
+enum IntegrationKind {
+  EDEBO_STUDENTS
+  HR_STAFF
+  TEACHING_LOAD
+  OFFBOARDING
+}
+
+enum IntegrationEventStatus {
+  PROCESSED
+  FAILED
 }
 
 enum ChannelType {
@@ -469,6 +488,8 @@ model User {
   /// Incremented on offboarding to invalidate every issued session token at once.
   sessionEpoch Int            @default(0) @map("session_epoch")
   offboardedAt DateTime?      @map("offboarded_at")
+  /// Graduates migrated to the Alumni Association contour.
+  isAlumni     Boolean        @default(false) @map("is_alumni")
   createdAt    DateTime       @default(now()) @map("created_at")
   updatedAt    DateTime       @updatedAt @map("updated_at")
 
@@ -593,18 +614,19 @@ model RolePermission {
 /// A user's role inside a tenant, optionally narrowed to one unit.
 /// tenant_id NULL = cross-tenant grant (allowed only for SUPER_ADMIN / RECTORATE).
 model RoleAssignment {
-  id           String    @id @default(uuid()) @db.Uuid
-  userId       String    @map("user_id") @db.Uuid
-  tenantId     String?   @map("tenant_id") @db.Uuid
+  id           String     @id @default(uuid()) @db.Uuid
+  userId       String     @map("user_id") @db.Uuid
+  tenantId     String?    @map("tenant_id") @db.Uuid
   role         RoleCode
-  instituteId  String?   @map("institute_id") @db.Uuid
-  departmentId String?   @map("department_id") @db.Uuid
-  orgUnitId    String?   @map("org_unit_id") @db.Uuid
-  dormitoryId  String?   @map("dormitory_id") @db.Uuid
+  instituteId  String?    @map("institute_id") @db.Uuid
+  departmentId String?    @map("department_id") @db.Uuid
+  orgUnitId    String?    @map("org_unit_id") @db.Uuid
+  dormitoryId  String?    @map("dormitory_id") @db.Uuid
   /// TTL for guests and temporary duties.
-  expiresAt    DateTime? @map("expires_at")
-  grantedById  String?   @map("granted_by_id") @db.Uuid
-  createdAt    DateTime  @default(now()) @map("created_at")
+  expiresAt    DateTime?  @map("expires_at")
+  grantedById  String?    @map("granted_by_id") @db.Uuid
+  source       RoleSource @default(ADMIN)
+  createdAt    DateTime   @default(now()) @map("created_at")
 
   user      User    @relation("RoleAssignee", fields: [userId], references: [id], onDelete: Cascade)
   grantedBy User?   @relation("RoleGrantor", fields: [grantedById], references: [id], onDelete: SetNull)
@@ -879,6 +901,23 @@ model ApprovalStep {
 
   @@unique([routeId, position])
   @@map("approval_steps")
+}
+
+// ─────────────────────────── Integrations ───────────────────────────
+
+/// Idempotency + replay ledger for signed ЄДЕБО / HR / ERP webhooks.
+model IntegrationEvent {
+  /// "<clientId>:<Idempotency-Key>"
+  id         String                 @id
+  clientId   String                 @map("client_id")
+  tenantId   String                 @map("tenant_id") @db.Uuid
+  kind       IntegrationKind
+  status     IntegrationEventStatus
+  summary    Json?
+  receivedAt DateTime               @default(now()) @map("received_at")
+
+  @@index([clientId, receivedAt])
+  @@map("integration_events")
 }
 
 // ─────────────────────────── Audit ───────────────────────────

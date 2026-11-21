@@ -6,7 +6,9 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: false });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: false, rawBody: true });
+  // Sync batches can hold up to 1000 records; everything else is small.
+  app.useBodyParser('json', { limit: '5mb' });
 
   app.disable('x-powered-by');
   // Only trust X-Forwarded-For from the configured reverse proxies (TLS 1.3 terminator).

@@ -33,9 +33,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm typecheck
-      - run: pnpm test
       - name: Apply migrations and seed twice (idempotency)
         run: |
           pnpm db:deploy
           pnpm db:seed
           pnpm db:seed
+      - name: Unit + PostgreSQL end-to-end tests
+        run: pnpm test
+        env:
+          RUN_DB_TESTS: "1"

@@ -50,6 +50,17 @@ before writing code. When a rule here conflicts with convenience, the rule wins.
    `ADMIN_STAFF` (finance, HR), `TRUST_SERVICE_OFFICER` (`MFA_REQUIRED_ROLES`).
    Offboarding bumps `users.session_epoch`, which revokes every session at once.
    There is **no** development auth bypass; tests inject principals directly.
+   MFA is enforced by the IdP; the API trusts only the `acr` / `amr` claims of the
+   ID token validated by `openid-client` and never stores TOTP secrets.
+10. **Sessions.** Opaque 256-bit tokens in an HttpOnly `__Host-` cookie
+    (SameSite=Lax); Redis stores only their SHA-256. Absolute and idle timeouts.
+    Every cookie-authenticated state-changing request must carry the web
+    `Origin` (CSRF). Login redirects accept only same-site relative paths.
+11. **Integrations.** ЄДЕБО / HR / ERP webhooks are authenticated by
+    HMAC-SHA256 over the raw body (`X-PUET-Signature: t=..,v1=..`, 5-minute
+    window), bound to one tenant and a list of allowed kinds, and require an
+    `Idempotency-Key`. They act as a `SERVICE_BOT` principal that can only
+    `sync.ingest`. No account is ever created at login (no self-registration).
 
 ## 2. Tech stack
 
@@ -67,7 +78,13 @@ before writing code. When a rule here conflicts with convenience, the rule wins.
 
 ```
 apps/
-  api/                 NestJS API: guards, resolvers, audit, policy service
+  api/                 NestJS API
+    src/auth/          OIDC login, MFA rules, principal factory, guards
+    src/session/       Redis session store, cookie middleware (CSRF)
+    src/authz/         PolicyGuard, @Authorize, resource resolvers
+    src/integrations/  HMAC webhooks, zod schemas, sync + offboarding
+    src/admin/         No-Code Admin Panel API
+    src/audit/         hash-chained audit log
 packages/
   shared/              Domain vocabulary: tenants, roles, actions, channel types
   policy-engine/       Pure RBAC + ABAC policy decision point (no I/O)
@@ -79,7 +96,8 @@ docker-compose.yml     PostgreSQL, Redis, MinIO (+ init), ClamAV
 ```
 
 Commands: `pnpm install`, `pnpm build`, `pnpm test`, `pnpm typecheck`,
-`pnpm infra:up`, `pnpm db:deploy`, `pnpm db:seed`.
+`pnpm infra:up`, `pnpm db:deploy`, `pnpm db:seed`. End-to-end tests against
+PostgreSQL run with `RUN_DB_TESTS=1 DATABASE_URL=... pnpm test` (CI does this).
 
 ## 4. Access control rules (RBAC + ABAC)
 
@@ -126,6 +144,28 @@ the same rules. Evaluation order, first deny wins, default deny:
 - Denials return a uniform `403 Access denied` (no hint that an id exists).
 - Every denial and every sensitive allow is written to the audit log. A
   sensitive action is refused if the audit write fails.
+- Request bodies are validated with zod (`common/validation.ts`); validation
+  errors list field paths, never the submitted values.
+- Admin services re-check that every referenced id (institute, department,
+  org unit, dormitory, group, role assignment) belongs to the authorized tenant.
+
+**Sync and admin rules (Phase 2)**
+
+- The sync owns only `role_assignments.source = SYNC` grants and may grant only
+  `SYNC_ASSIGNABLE_ROLES`. `RECTORATE` and `SUPER_ADMIN` come only from the admin
+  panel. Sync-owned grants cannot be revoked in the panel (fix them at the source).
+- An offboarded person is never reactivated by a sync. Offboarding: status
+  `OFFBOARDED`, `session_epoch + 1`, all sessions purged, internal certificates
+  revoked (`AFFILIATION_CHANGED`), sync grants removed, archives kept.
+- Separation of duties: nobody changes their own roles; cross-tenant grants only
+  for `SUPER_ADMIN` / `RECTORATE`; guest grants must expire; the last
+  `SUPER_ADMIN` cannot be removed; `SUPER_ADMIN` always keeps
+  `SUPER_ADMIN_LOCKED` actions in the matrix.
+- ABAC policies are validated with `validateCondition()` before saving; every
+  matrix or policy change invalidates the policy cache and is audited with
+  before/after values.
+- After deploying a version that adds actions, run `pnpm db:seed` (idempotent):
+  it adds the new default permissions to `role_permissions`.
 
 ## 5. Organizational topology and data model
 
@@ -190,10 +230,13 @@ section apply only to marketing pages, not to the messenger app.
 
 ## 7. Execution plan
 
-- **Phase 1 (done in this PR):** CLAUDE.md, monorepo, Docker Compose, Prisma
-  schema for the multi-tenant + matrix structure, RBAC/ABAC engine and guards.
-- **Phase 2:** OIDC / SSO, MFA, profile sync API (ЄДЕБО / HR webhooks,
-  offboarding), No-Code Admin Panel for structure, roles and policies.
+- **Phase 1 (done):** CLAUDE.md, monorepo, Docker Compose, Prisma schema for
+  the multi-tenant + matrix structure, RBAC/ABAC engine and guards.
+- **Phase 2 (done):** OIDC / SSO with PKCE, IdP-enforced MFA with step-up,
+  Redis sessions, signed sync webhooks (ЄДЕБО students, HR staff, ERP teaching
+  load, offboarding), No-Code Admin Panel API (structure, bulk promotion,
+  graduation to alumni, roles, permission matrix, ABAC policies, simulator,
+  audit log and chain verification). The visual panel is part of Phase 5.
 - **Phase 3:** real-time messaging, channel auto-provisioning, Quiet Hours
   scheduler (Redis), E2EE key exchange and encryption layer.
 - **Phase 4:** Secure PDF Viewer (CDR, watermarks, JSON annotations), Internal
