@@ -1,9 +1,6 @@
 /**
  * Reference structure of PUET used to seed a fresh database.
  * After go-live the No-Code Admin Panel (Phase 2) and ЄДЕБО/HR sync own this data.
- *
- * NOTE: the department list below must be verified against the current official
- * list of PUET departments before production seeding.
  */
 import type { E2eeMode, OrgUnitKind, TenantCode } from '@prisma/client';
 
@@ -91,65 +88,65 @@ export const INSTITUTES: (NamedSeed & { bilingualUi?: boolean })[] = [
   },
 ];
 
-/** Academic vertical: 17 cross-institute departments (кафедри). Verify before production. */
+/** Academic vertical: 17 cross-institute departments (кафедри), official list confirmed by PUET. */
 export const DEPARTMENTS: NamedSeed[] = [
-  { code: 'ACCOUNTING_AUDIT', nameUk: 'Кафедра обліку і аудиту', nameEn: 'Department of Accounting and Audit' },
-  { code: 'FINANCE_BANKING', nameUk: 'Кафедра фінансів та банківської справи', nameEn: 'Department of Finance and Banking' },
+  { code: 'ACCOUNTING_AUDIT', nameUk: 'Кафедра бухгалтерського обліку і аудиту', nameEn: 'Department of Accounting and Auditing' },
   {
-    code: 'INTL_ECONOMICS',
-    nameUk: 'Кафедра міжнародної економіки та міжнародних економічних відносин',
-    nameEn: 'Department of International Economics and International Economic Relations',
+    code: 'HOSPITALITY_RESORT',
+    nameUk: 'Кафедра готельно-ресторанної та курортної справи',
+    nameEn: 'Department of Hotel, Restaurant and Resort Business',
+  },
+  { code: 'BUSINESS_FOREIGN_LANGUAGE', nameUk: 'Кафедра ділової іноземної мови', nameEn: 'Department of Business Foreign Language' },
+  {
+    code: 'ECON_CYBERNETICS_IS',
+    nameUk: 'Кафедра економічної кібернетики, бізнес-економіки та інформаційних систем',
+    nameEn: 'Department of Economic Cybernetics, Business Economics and Information Systems',
   },
   {
     code: 'COMPUTER_SCIENCE_IT',
     nameUk: 'Кафедра комп’ютерних наук та інформаційних технологій',
     nameEn: 'Department of Computer Science and Information Technologies',
   },
-  { code: 'LAW', nameUk: 'Кафедра права', nameEn: 'Department of Law' },
-  { code: 'MANAGEMENT', nameUk: 'Кафедра менеджменту', nameEn: 'Department of Management' },
   { code: 'MARKETING', nameUk: 'Кафедра маркетингу', nameEn: 'Department of Marketing' },
+  { code: 'MANAGEMENT', nameUk: 'Кафедра менеджменту', nameEn: 'Department of Management' },
   {
-    code: 'HOTEL_RESTAURANT',
-    nameUk: 'Кафедра готельного і ресторанного бізнесу',
-    nameEn: 'Department of Hotel and Restaurant Business',
+    code: 'INTL_ECONOMICS',
+    nameUk: 'Кафедра міжнародної економіки та міжнародних економічних відносин',
+    nameEn: 'Department of International Economics and International Economic Relations',
   },
-  { code: 'FOOD_TECHNOLOGIES', nameUk: 'Кафедра харчових технологій', nameEn: 'Department of Food Technologies' },
+  { code: 'PEDAGOGY_SOCIAL_SCIENCES', nameUk: 'Кафедра педагогіки та суспільних наук', nameEn: 'Department of Pedagogy and Social Sciences' },
+  { code: 'LAW', nameUk: 'Кафедра правознавства', nameEn: 'Department of Law' },
+  {
+    code: 'ENTREPRENEURSHIP_TRADE',
+    nameUk: 'Кафедра підприємництва, торгівлі та біржової діяльності',
+    nameEn: 'Department of Entrepreneurship, Trade and Exchange Activities',
+  },
+  {
+    code: 'FOOD_TECHNOLOGIES',
+    nameUk: 'Кафедра технологій харчових виробництв і ресторанного господарства',
+    nameEn: 'Department of Food Production Technologies and Restaurant Industry',
+  },
   {
     code: 'COMMODITY_SCIENCE',
-    nameUk: 'Кафедра товарознавства, біотехнологій, експертизи та митної справи',
+    nameUk: 'Кафедра товарознавства, біотехнології, експертизи та митної справи',
     nameEn: 'Department of Commodity Science, Biotechnology, Expertise and Customs',
   },
   {
-    code: 'ECONOMIC_THEORY',
-    nameUk: 'Кафедра економічної теорії та економічної кібернетики',
-    nameEn: 'Department of Economic Theory and Economic Cybernetics',
+    code: 'TOURISM_HOTEL',
+    nameUk: 'Кафедра туристичного та готельного бізнесу',
+    nameEn: 'Department of Tourism and Hotel Business',
   },
-  {
-    code: 'MATH_MODELING',
-    nameUk: 'Кафедра математичного моделювання та соціальної інформатики',
-    nameEn: 'Department of Mathematical Modeling and Social Informatics',
-  },
-  { code: 'TOURISM', nameUk: 'Кафедра туризму', nameEn: 'Department of Tourism' },
   {
     code: 'LANGUAGES_TRANSLATION',
     nameUk: 'Кафедра української, іноземних мов та перекладу',
     nameEn: 'Department of Ukrainian, Foreign Languages and Translation',
   },
   {
-    code: 'PUBLIC_ADMINISTRATION',
-    nameUk: 'Кафедра публічного управління та адміністрування',
-    nameEn: 'Department of Public Administration',
+    code: 'HR_LABOR_ECONOMICS',
+    nameUk: 'Кафедра управління персоналом, економіки праці та економічної теорії',
+    nameEn: 'Department of Human Resource Management, Labor Economics and Economic Theory',
   },
-  {
-    code: 'TRADE_LOGISTICS',
-    nameUk: 'Кафедра торговельного підприємництва та логістики',
-    nameEn: 'Department of Trade Entrepreneurship and Logistics',
-  },
-  {
-    code: 'PEDAGOGY_PSYCHOLOGY_PE',
-    nameUk: 'Кафедра педагогіки, психології та фізичного виховання',
-    nameEn: 'Department of Pedagogy, Psychology and Physical Education',
-  },
+  { code: 'FINANCE_BANKING', nameUk: 'Кафедра фінансів та банківської справи', nameEn: 'Department of Finance and Banking' },
 ];
 
 export interface OrgUnitSeed extends NamedSeed {
