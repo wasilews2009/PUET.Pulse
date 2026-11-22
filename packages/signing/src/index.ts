@@ -80,8 +80,10 @@ export async function sha256Hex(data: Uint8Array): Promise<string> {
  * Detached CAdES-BES signature over a document whose SHA-256 is given. Use it
  * when the client holds only the digest (e.g. a confidential, view-only file).
  * Returns base64 DER of CMS ContentInfo(SignedData) without encapsulated content.
+ * Pass `signingTime = null` for PAdES: the claimed time lives in the PDF's
+ * signature dictionary (/M) and the signing-time attribute must be absent.
  */
-export async function signDigest(sha256: Uint8Array, privateKey: CryptoKey, certificate: string | Uint8Array, signingTime = new Date()): Promise<string> {
+export async function signDigest(sha256: Uint8Array, privateKey: CryptoKey, certificate: string | Uint8Array, signingTime: Date | null = new Date()): Promise<string> {
   if (sha256.length !== 32) throw new Error('A SHA-256 digest has 32 bytes');
   const certDer = typeof certificate === 'string' ? pemToDer(certificate) : certificate;
   const cert = pkijs.Certificate.fromBER(toAb(certDer));
@@ -100,7 +102,7 @@ export async function signDigest(sha256: Uint8Array, privateKey: CryptoKey, cert
     type: 0,
     attributes: [
       new pkijs.Attribute({ type: OID.contentType, values: [new asn1js.ObjectIdentifier({ value: OID.data })] }),
-      new pkijs.Attribute({ type: OID.signingTime, values: [new asn1js.UTCTime({ valueDate: signingTime })] }),
+      ...(signingTime ? [new pkijs.Attribute({ type: OID.signingTime, values: [new asn1js.UTCTime({ valueDate: signingTime })] })] : []),
       new pkijs.Attribute({ type: OID.messageDigest, values: [new asn1js.OctetString({ valueHex: toAb(sha256) })] }),
       new pkijs.Attribute({ type: OID.signingCertificateV2, values: [signingCertificateV2] }),
     ],

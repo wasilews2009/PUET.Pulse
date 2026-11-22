@@ -7,7 +7,9 @@ import { Public } from '../auth/public.decorator';
 import { Authorize } from '../authz/authorize.decorator';
 import { binary } from '../common/binary';
 import { parse } from '../common/validation';
+import { sendFile } from '../files/files.controller';
 import { readRawBody } from '../files/files.service';
+import { PadesService, padesCompleteInput } from './pades.service';
 import { PkiService } from './pki.service';
 import { SignaturesService, signInput } from './signatures.service';
 import { VerificationService } from './verification.service';
@@ -31,6 +33,7 @@ export class PkiController {
     @Inject(PkiService) private readonly pki: PkiService,
     @Inject(SignaturesService) private readonly signatures: SignaturesService,
     @Inject(VerificationService) private readonly verification: VerificationService,
+    @Inject(PadesService) private readonly pades: PadesService,
   ) {}
 
   // ── Own certificates ──
@@ -84,6 +87,27 @@ export class PkiController {
   @Authorize(Action.DOCUMENT_SIGN, FILE)
   sign(@Req() req: AuthenticatedRequest, @Body() body: unknown) {
     return this.signatures.sign(req.principal!, req.authz!.resource, parse(signInput, body));
+  }
+
+  /** PAdES step 1: the stamped copy is prepared and its byte-range digest returned for signing on the device. */
+  @Post('files/:fileId/pades')
+  @Authorize(Action.DOCUMENT_SIGN, FILE)
+  preparePades(@Req() req: AuthenticatedRequest) {
+    return this.pades.prepare(req.principal!, req.authz!.resource);
+  }
+
+  /** PAdES step 2: the CMS made on the device is checked and embedded. */
+  @Post('files/:fileId/pades/:draftId')
+  @Authorize(Action.DOCUMENT_SIGN, FILE)
+  completePades(@Req() req: AuthenticatedRequest, @Param('draftId') draftId: string, @Body() body: unknown) {
+    return this.pades.complete(req.principal!, req.authz!.resource, parse(uuid, draftId), parse(padesCompleteInput, body));
+  }
+
+  /** The signed copy with the visual QR stamp. Downloading it follows the file's own download rule. */
+  @Get('files/:fileId/signatures/:signatureId/signed.pdf')
+  @Authorize(Action.FILE_DOWNLOAD, FILE)
+  async signedCopy(@Req() req: AuthenticatedRequest, @Param('signatureId') signatureId: string, @Res() res: Response) {
+    sendFile(res, await this.pades.signedCopy(req.authz!.resource, parse(uuid, signatureId)));
   }
 
   @Get('files/:fileId/signatures')

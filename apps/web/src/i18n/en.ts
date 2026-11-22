@@ -553,6 +553,10 @@ export const en: Dictionary = {
     protocol: 'Verification protocol',
   },
   sign: {
+    format: 'Signature format',
+    pades: 'PAdES: signed PDF copy with a visual QR stamp',
+    cades: 'CAdES: detached signature (.p7s), the document stays unchanged',
+    downloadSigned: 'Download the signed PDF',
     title: 'Sign document',
     internal: 'University signature (internal certificate)',
     qes: 'Qualified signature (QES)',

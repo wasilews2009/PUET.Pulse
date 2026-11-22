@@ -35,14 +35,31 @@ export function useLocalCertificate() {
 /**
  * «Підписати ЕП». Internal УЕП: the browser signs the server's SHA-256 of the
  * served (sanitized) bytes with its non-extractable key, producing CAdES-BES.
+ * With PAdES (ordinary PDFs) the server first stamps a copy with a visible QR
+ * stamp and returns the digest of its byte ranges; the browser signs that
+ * instead, and the signed copy can be downloaded.
  * КЕП: the detached .p7s produced by a certified tool (IIT / Дія.Підпис) is
  * uploaded and verified by the QES gateway with OCSP and TSP.
  */
-export function SignDialog({ fileId, open, onClose, onSigned }: { fileId: string; open: boolean; onClose: () => void; onSigned?: (s: Signature) => void }) {
+export function SignDialog({
+  fileId,
+  open,
+  onClose,
+  onSigned,
+  padesAllowed = false,
+}: {
+  fileId: string;
+  open: boolean;
+  onClose: () => void;
+  onSigned?: (s: Signature) => void;
+  /** An ordinary (not confidential) PDF: offer the stamped PAdES copy. */
+  padesAllowed?: boolean;
+}) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const [mode, setMode] = useState<'INTERNAL_PKI' | 'EXTERNAL_QES'>('INTERNAL_PKI');
   const [p7s, setP7s] = useState<Uint8Array | null>(null);
+  const [format, setFormat] = useState<'PAdES' | 'CAdES'>(padesAllowed ? 'PAdES' : 'CAdES');
   const [error, setError] = useState<string | null>(null);
   const info = useQuery({ queryKey: ['signing-info', fileId], queryFn: () => api<SigningInfo>(`/files/${fileId}/signing-info`), enabled: open });
   const local = useLocalCertificate();
@@ -54,6 +71,12 @@ export function SignDialog({ fileId, open, onClose, onSigned }: { fileId: string
       if (mode === 'INTERNAL_PKI') {
         if (!local.cert || !local.key) throw new Error('no-cert');
         const { signDigest, hexToBytes } = await import('@puet/signing');
+        if (padesAllowed && format === 'PAdES') {
+          const draft = await api<{ draftId: string; digest: string }>(`/files/${fileId}/pades`, { method: 'POST' });
+          // PAdES: no signing-time attribute; the time is in the PDF's signature dictionary.
+          const cms = await signDigest(hexToBytes(draft.digest), local.key.privateKey, local.cert.certificatePem, null);
+          return api<Signature>(`/files/${fileId}/pades/${draft.draftId}`, { method: 'POST', body: { signature: cms } });
+        }
         signature = await signDigest(hexToBytes(i.sha256), local.key.privateKey, local.cert.certificatePem);
       } else {
         if (!p7s) throw new Error('no-file');
@@ -137,6 +160,17 @@ export function SignDialog({ fileId, open, onClose, onSigned }: { fileId: string
             })}
           </fieldset>
 
+          {mode === 'INTERNAL_PKI' && padesAllowed && (
+            <fieldset className="flex flex-col gap-1">
+              <legend className="mb-1 caption-3 text-muted">{t('sign.format')}</legend>
+              {(['PAdES', 'CAdES'] as const).map((f) => (
+                <label key={f} className="flex cursor-pointer items-start gap-2 body-6">
+                  <input type="radio" name="format" className="mt-1 accent-[var(--puet-navy-primary)]" checked={format === f} onChange={() => setFormat(f)} />
+                  <span>{f === 'PAdES' ? t('sign.pades') : t('sign.cades')}</span>
+                </label>
+              ))}
+            </fieldset>
+          )}
           {mode === 'INTERNAL_PKI' && !local.loading && !local.cert && (
             <p className="flex items-start gap-2 body-6 text-muted">
               <CertIcon size={18} className="mt-0.5 shrink-0 text-primary" aria-hidden="true" />
@@ -155,7 +189,7 @@ export function SignDialog({ fileId, open, onClose, onSigned }: { fileId: string
               <input type="file" accept=".p7s,.p7m,application/pkcs7-signature" className="sr-only" onChange={async (e) => setP7s(e.target.files?.[0] ? new Uint8Array(await e.target.files[0].arrayBuffer()) : null)} />
             </label>
           )}
-          {info.data && (
+          {info.data && !(mode === 'INTERNAL_PKI' && padesAllowed && format === 'PAdES') && (
             <div className="flex flex-col gap-1">
               <span className="caption-3 text-muted">{t('sign.digest')}</span>
               <code className="rounded-lg bg-surface-2 px-3 py-2 font-mono text-xs leading-4 break-all">{info.data.sha256}</code>

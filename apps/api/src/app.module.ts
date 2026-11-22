@@ -27,6 +27,7 @@ import { FilesController } from './files/files.controller';
 import { FilesService } from './files/files.service';
 import { ClamdScanner, MALWARE_SCANNER } from './files/malware-scanner';
 import { OBJECT_STORE, S3ObjectStore } from './files/object-store';
+import { PadesService } from './pki/pades.service';
 import { PkiController } from './pki/pki.controller';
 import { CA_LOADER, PkiService, fileCaLoader, type CaLoader } from './pki/pki.service';
 import {
@@ -128,6 +129,7 @@ export const REDIS = Symbol('REDIS');
     AnnotationsService,
     PkiService,
     SignaturesService,
+    PadesService,
     ApprovalsService,
     PollsService,
     CallsService,

@@ -541,6 +541,7 @@ model User {
   signatures       DocumentSignature[]      @relation("DocumentSigner")
   annotations      PdfAnnotation[]          @relation("AnnotationAuthor")
   fileBookmarks    FileBookmark[]
+  padesDrafts      PadesDraft[]
   devices          Device[]
   crossSigningKeys CrossSigningKey[]
   keyBackups       KeyBackupVersion[]
@@ -982,6 +983,7 @@ model FileObject {
   uploader    User                @relation(fields: [uploaderId], references: [id], onDelete: Restrict)
   annotations PdfAnnotation[]
   bookmarks   FileBookmark[]
+  padesDrafts PadesDraft[]
   signatures  DocumentSignature[]
   approvals   ApprovalRoute[]
 
@@ -1074,6 +1076,8 @@ model DocumentSignature {
   /// Revocation check made at signing time: "internal" (own CA), "ocsp" (QES gateway).
   revocationSource    String                @map("revocation_source")
   revocationCheckedAt DateTime              @map("revocation_checked_at")
+  /// PAdES only: SHA-256 of the signed, stamped copy stored at `signature_key`.
+  signedCopySha256    String?               @map("signed_copy_sha256")
   createdAt           DateTime              @default(now()) @map("created_at")
 
   file         FileObject      @relation(fields: [fileId], references: [id], onDelete: Restrict)
@@ -1084,6 +1088,28 @@ model DocumentSignature {
   @@unique([fileId, certificateId])
   @@index([fileId])
   @@map("document_signatures")
+}
+
+/// A stamped PDF waiting for its PAdES signature (step 1 of 2). Expires after 15 minutes.
+model PadesDraft {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  fileId        String   @map("file_id") @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  certificateId String   @map("certificate_id") @db.Uuid
+  /// SHA-256 of the served document the stamp was applied to.
+  baseSha256    String   @map("base_sha256")
+  /// SHA-256 of the byte ranges: what the client signs.
+  digest        String
+  storageKey    String   @map("storage_key")
+  createdAt     DateTime @default(now()) @map("created_at")
+  expiresAt     DateTime @map("expires_at")
+
+  file FileObject @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("pades_drafts")
 }
 
 /// Multi-step approval route, e.g. Student -> Head of Department -> Institute Director.

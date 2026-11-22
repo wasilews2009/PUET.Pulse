@@ -1,4 +1,4 @@
-import { ArrowLeft, BookmarkSimple, CaretLeft, CaretRight, Highlighter, SidebarSimple, Lock, MagnifyingGlassMinus, MagnifyingGlassPlus, NotePencil, PenNib, ShieldCheck, Stamp, Trash } from '@phosphor-icons/react';
+import { ArrowLeft, BookmarkSimple, DownloadSimple, CaretLeft, CaretRight, Highlighter, SidebarSimple, Lock, MagnifyingGlassMinus, MagnifyingGlassPlus, NotePencil, PenNib, ShieldCheck, Stamp, Trash } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -396,7 +396,15 @@ function Viewer({ fileId }: { fileId: string }) {
                     <span className="body-5">{s.signerName}</span>
                     <Badge tone={s.level === 'КЕП' ? 'navy' : 'neutral'}>{s.level}</Badge>
                   </span>
-                  <span className="caption-5 text-muted">{formatDateTime(s.createdAt, i18n.language)}</span>
+                  <span className="caption-5 text-muted">
+                    {s.format} · {formatDateTime(s.createdAt, i18n.language)}
+                  </span>
+                  {s.format.startsWith('PAdES') && !confidential && (
+                    <a href={`/api/files/${fileId}/signatures/${s.id}/signed.pdf`} download className="inline-flex items-center gap-1 caption-4 text-primary underline">
+                      <DownloadSimple size={14} aria-hidden="true" />
+                      {t('sign.downloadSigned')}
+                    </a>
+                  )}
                 </li>
               ))}
             </ul>
@@ -412,7 +420,7 @@ function Viewer({ fileId }: { fileId: string }) {
         </div>
       </aside>
 
-      <SignDialog fileId={fileId} open={signOpen} onClose={() => setSignOpen(false)} />
+      <SignDialog fileId={fileId} open={signOpen} onClose={() => setSignOpen(false)} padesAllowed={isPdf && !confidential} />
       <NewRouteDialog fileId={fileId} open={routeOpen} onClose={() => setRouteOpen(false)} />
     </main>
   );

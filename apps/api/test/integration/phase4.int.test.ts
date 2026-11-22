@@ -405,6 +405,46 @@ describe.skipIf(!enabled)('Phase 4 end-to-end (PostgreSQL)', () => {
     expect(denied).toBe(3);
   });
 
+  it('PAdES: a stamped copy signed on the device; drafts are personal, single-use and bound to the signer\'s certificate', async () => {
+    const f = await uploadReady('S2', await plainPdf('Contract', 2), 'dogovir.pdf');
+    const draft = (await (await as('S2').post(`/files/${f.id}/pades`)).json()) as { draftId: string; digest: string };
+    expect(draft.digest).toMatch(/^[0-9a-f]{64}$/);
+    // IDOR: another member cannot complete someone else's draft, even with a valid signature of their own.
+    const s1sig = await signDigest(hexToBytes(draft.digest), keys.S1!.pair.privateKey, keys.S1!.pem, null);
+    expect((await as('S1').post(`/files/${f.id}/pades/${draft.draftId}`, { signature: s1sig })).status).toBe(403);
+    // Certificate theft: S2's draft signed with S1's key and certificate is refused.
+    expect((await as('S2').post(`/files/${f.id}/pades/${draft.draftId}`, { signature: s1sig })).status).toBe(422);
+    // Tampering: a signature over another digest is refused.
+    const wrong = await signDigest(new Uint8Array(32).fill(7), keys.S2!.pair.privateKey, keys.S2!.pem, null);
+    expect((await as('S2').post(`/files/${f.id}/pades/${draft.draftId}`, { signature: wrong })).status).toBe(422);
+
+    const good = await signDigest(hexToBytes(draft.digest), keys.S2!.pair.privateKey, keys.S2!.pem, null);
+    const done = await as('S2').post(`/files/${f.id}/pades/${draft.draftId}`, { signature: good });
+    expect(done.status).toBe(201);
+    const sig = (await done.json()) as { id: string; format: string; level: string };
+    expect(sig).toMatchObject({ format: 'PAdES-B-B', level: 'УЕП' });
+    // Single use: the draft is gone.
+    expect((await as('S2').post(`/files/${f.id}/pades/${draft.draftId}`, { signature: good })).status).toBe(403);
+
+    const copy = await as('S1').get(`/files/${f.id}/signatures/${sig.id}/signed.pdf`);
+    expect(copy.status).toBe(200);
+    expect(copy.headers.get('content-disposition')).toContain('attachment');
+    const bytes = Buffer.from(await copy.arrayBuffer());
+    const { extractPades } = await import('../../src/pki/pades');
+    const { verifyDetachedCms } = await import('../../src/pki/cms');
+    const x = extractPades(bytes);
+    await expect(verifyDetachedCms(x.cms, x.content)).resolves.toBeTruthy();
+    expect((await as('S3').get(`/files/${f.id}/signatures/${sig.id}/signed.pdf`)).status).toBe(403);
+
+    const protocol = (await (await as('S1').get(`/files/${f.id}/verification`)).json()) as { signatures: { format: string; valid: boolean }[] };
+    expect(protocol.signatures).toEqual([expect.objectContaining({ format: 'PAdES-B-B', valid: true })]);
+
+    // View-only documents are signed as detached CAdES, never stamped and handed out.
+    const secret = await uploadReady('L', await plainPdf('Payroll'), 'payroll.pdf', true);
+    await enroll('L');
+    expect((await as('L').post(`/files/${secret.id}/pades`)).status).toBe(400);
+  });
+
   it('CRL and OCSP publish revocations of the internal CA', async () => {
     const cert = await enroll('S3');
     expect((await as('S3').post(`/me/certificates/${cert.id}/revoke`, { reason: 'KEY_COMPROMISE' })).status).toBe(201);

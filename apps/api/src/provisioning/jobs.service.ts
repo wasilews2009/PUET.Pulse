@@ -1,3 +1,4 @@
+import { PadesService } from '../pki/pades.service';
 import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { APP_CONFIG, type AppConfig } from '../config/config';
@@ -48,6 +49,7 @@ export class JobsService implements OnApplicationBootstrap, OnModuleDestroy {
     @Inject(CallsService) private readonly calls: CallsService,
     @Inject(OutboxService) private readonly outbox: OutboxService,
     @Inject(BotInboxService) private readonly botInbox: BotInboxService,
+    @Inject(PadesService) private readonly pades: PadesService,
   ) {}
 
   readonly jobs: Job[] = [
@@ -60,6 +62,7 @@ export class JobsService implements OnApplicationBootstrap, OnModuleDestroy {
     { name: 'call-revalidate', everyMs: 60_000, run: () => this.calls.revalidate() },
     { name: 'outbox-flush', everyMs: 30_000, run: () => this.outbox.flush() },
     { name: 'bot-purge', everyMs: 3_600_000, run: () => this.botInbox.purgeExpired() },
+    { name: 'pades-drafts', everyMs: 600_000, run: () => this.pades.purgeExpiredDrafts() },
   ];
 
   onApplicationBootstrap() {

@@ -9,6 +9,7 @@ import { FilesService } from '../files/files.service';
 import { OBJECT_STORE, type ObjectStore } from '../files/object-store';
 import { PrismaService } from '../prisma/prisma.service';
 import { verifyDetachedCms } from './cms';
+import { verifyPadesCopy } from './pades';
 import { levelOf } from './signatures.service';
 
 type Lang = 'uk' | 'en';
@@ -131,7 +132,10 @@ export class VerificationService {
       let cmsOk = r.provider !== 'INTERNAL_PKI';
       if (r.provider === 'INTERNAL_PKI' && digestMatches) {
         const sig = await this.store.get('attachments', r.signatureKey);
-        cmsOk = !!sig && (await verifyDetachedCms(sig, body).then(() => true, () => false));
+        // PAdES: the CMS lives inside the signed, stamped copy of this document.
+        cmsOk = r.signedCopySha256
+          ? await verifyPadesCopy(sig, r.signedCopySha256)
+          : !!sig && (await verifyDetachedCms(sig, body).then(() => true, () => false));
       }
       const revokedBefore = r.certificate.revokedAt !== null && r.certificate.revokedAt <= r.createdAt;
       signatures.push({
