@@ -92,6 +92,8 @@ export interface ServedFile {
 /** Who is looking: the watermark of a confidential view names them, their id and their address. */
 export interface ViewContext {
   ip: string | null;
+  /** A byte-range request: may reuse the bytes verified by the viewer's first full read. */
+  ranged?: boolean;
 }
 
 /**
@@ -349,13 +351,15 @@ export class FilesService {
   }
 
   /** The exact bytes users view, download and sign: the sanitized copy for PDFs, otherwise the original. */
-  async servedBytes(fileResource: Resource): Promise<{ file: FileRow; body: Buffer }> {
+  async servedBytes(fileResource: Resource, opts: { cached?: boolean } = {}): Promise<{ file: FileRow; body: Buffer }> {
     const file = await this.prisma.fileObject.findFirstOrThrow({ where: { id: fileResource.id!, tenantId: fileResource.tenantId } });
     if (fileStatus(file) !== 'READY') throw new ConflictException('The file is not available');
     const key = file.mimeType === 'application/pdf' ? file.sanitizedKey : file.storageKey;
     if (!key) throw new ConflictException('The file is not available');
     const cacheKey = `${file.id}:${file.servedSha256}`;
-    const cached = file.confidential ? undefined : this.cache.get(cacheKey);
+    // Only ranged viewer reads may reuse bytes verified moments ago; signing,
+    // verification and whole-file reads always re-hash what is in storage.
+    const cached = file.confidential || !opts.cached ? undefined : this.cache.get(cacheKey);
     if (cached) return { file, body: cached };
     const body = await this.store.get('attachments', key);
     if (!body || sha256(body) !== file.servedSha256) throw new ConflictException('The file is not available');
@@ -369,7 +373,7 @@ export class FilesService {
    * PDFs may be read in byte ranges so only the pages on screen are fetched.
    */
   async view(principal: Principal, fileResource: Resource, ctx: ViewContext = { ip: null }, now = new Date()): Promise<ServedFile> {
-    const { file, body } = await this.servedBytes(fileResource);
+    const { file, body } = await this.servedBytes(fileResource, { cached: ctx.ranged === true });
     if (!VIEWABLE_TYPES.has(file.mimeType)) throw new UnsupportedMediaTypeException('This file can only be downloaded');
     let out = body;
     if (file.confidential) {

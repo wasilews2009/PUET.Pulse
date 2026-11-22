@@ -104,8 +104,9 @@ export class FilesController {
   @Get('files/:fileId/view')
   @Authorize(Action.FILE_VIEW, FILE)
   async view(@Req() req: AuthenticatedRequest, @Res() res: Response) {
-    const f = await this.files.view(req.principal!, req.authz!.resource, { ip: req.ip ?? null });
-    sendFile(res, f, typeof req.headers.range === 'string' ? req.headers.range : undefined);
+    const range = typeof req.headers.range === 'string' ? req.headers.range : undefined;
+    const f = await this.files.view(req.principal!, req.authz!.resource, { ip: req.ip ?? null, ranged: range !== undefined });
+    sendFile(res, f, range);
   }
 
   @Get('files/:fileId/download')

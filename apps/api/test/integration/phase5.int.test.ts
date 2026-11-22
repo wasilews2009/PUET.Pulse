@@ -348,6 +348,7 @@ describe.skipIf(!enabled)('Phase 5 security (PostgreSQL)', () => {
     store.objects.set(key, { ...original, body });
     try {
       expect((await as('S1').get(`/files/${fileId}/view`)).status).toBe(409);
+      expect((await as('S1').get(`/files/${fileId}/download`)).status).toBe(409);
       expect((await as('L').get(`/files/${fileId}/signing-info`)).status).toBe(409);
       expect((await as('L').get(`/files/${fileId}/verification`)).status).toBe(409);
     } finally {
