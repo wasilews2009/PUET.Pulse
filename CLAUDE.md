@@ -108,6 +108,7 @@ apps/
     scripts/init-ca.ts one-time creation of the internal CA (keys outside the repo)
     scripts/grant-super-admin.ts  first SUPER_ADMIN from the console (once, audited)
     scripts/demo-data.ts          fictional people via signed sync webhooks (never in production)
+    scripts/send-sync.ts          one signed sync batch from a JSON file (pilot before HR / ЄДЕБО)
   web/                 React 19 + Vite PWA client (served next to the API, /api prefix)
     src/api/           fetch client, DTO types, React Query hooks, batched cards
     src/features/      shell, chat, files (PDF.js viewer), signatures, approvals,
@@ -123,8 +124,11 @@ packages/
   signing/             Client УЕП: non-extractable WebCrypto keys, CSR, CAdES-BES (PKI.js)
   database/            Prisma schema, migrations, seed (PUET structure)
 infra/                 Postgres init, MinIO bucket bootstrap + API account, nginx example (TLS 1.3, CSP),
-                       demo Keycloak realm (trial only), systemd unit, LiveKit config, demo.env.example
-docs/                  DEPLOYMENT.md (trial, tests, university rollout), USER_GUIDE.md
+                       demo Keycloak realm (trial only) + production realm script, systemd unit,
+                       LiveKit config, demo.env.example, single-server/ (compose additions, env
+                       generator, nginx for sso / meet, nightly backup)
+docs/                  DEPLOYMENT.md (trial, tests, university rollout), SERVER_SETUP.md
+                       (one-server pilot, step by step), USER_GUIDE.md
 scripts/with-env.mjs   loads ./.env (or PULSE_ENV_FILE) for root scripts; existing env wins
 assets/brand/          PUET logos (official SVG vectors, .ai source, raster originals)
 .claude/skills/        Design skills used for GUI work (Phase 5)

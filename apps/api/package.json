@@ -12,7 +12,8 @@
     "test": "vitest run",
     "pki:init-ca": "tsx scripts/init-ca.ts",
     "demo:data": "tsx scripts/demo-data.ts",
-    "admin:bootstrap": "tsx scripts/grant-super-admin.ts"
+    "admin:bootstrap": "tsx scripts/grant-super-admin.ts",
+    "sync:send": "tsx scripts/send-sync.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.12.0",

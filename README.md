@@ -62,6 +62,8 @@ On-premise, zero-trust, multi-tenant.
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): пробний запуск на одному комп'ютері з тестовими
   користувачами, тестування, розгортання в університеті (сервери, Keycloak, LiveKit, TLS,
   резервні копії, пілот).
+- [docs/SERVER_SETUP.md](docs/SERVER_SETUP.md): покрокове встановлення на один сервер
+  (безкоштовний Oracle Cloud Always Free або сервер університету).
 - [docs/USER_GUIDE.md](docs/USER_GUIDE.md): як користуватися месенджером.
 
 ## Швидкий старт (пробний стенд)

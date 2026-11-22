@@ -7,6 +7,8 @@
 3. [Розгортання в університеті](#3-розгортання-в-університеті): сервери, SSO, дзвінки, TLS, резервні копії, пілот.
 
 Як користуватися самим месенджером, описано в [USER_GUIDE.md](USER_GUIDE.md).
+Покрокове встановлення на один сервер (зокрема безкоштовний Oracle Cloud) — у
+[SERVER_SETUP.md](SERVER_SETUP.md).
 
 ---
 
@@ -179,14 +181,15 @@ CSRF, open redirect, ізоляція неповнолітніх, підробк
    sudo useradd --system --home /srv/puet-pulse puet-pulse
    sudo git clone https://github.com/wasilews2009/PUET.Pulse.git /srv/puet-pulse/app
    cd /srv/puet-pulse/app && pnpm install --frozen-lockfile && pnpm build
-   sudo install -m 600 .env /etc/puet/pulse.env      # налаштування, лише для root
-   PULSE_ENV_FILE=/etc/puet/pulse.env pnpm db:deploy
-   PULSE_ENV_FILE=/etc/puet/pulse.env pnpm db:seed
+   sudo install -o root -g puet-pulse -m 640 .env /etc/puet/pulse.env   # читають лише root і служба
+   sudo PULSE_ENV_FILE=/etc/puet/pulse.env pnpm db:deploy
+   sudo PULSE_ENV_FILE=/etc/puet/pulse.env pnpm db:seed
    ```
 
 3. **Внутрішній ЦСК (УЕП).** Один раз, ключ зберігається поза репозиторієм:
    ```bash
-   sudo -u puet-pulse PULSE_ENV_FILE=/etc/puet/pulse.env pnpm pki:init-ca /etc/puet/ca
+   sudo PULSE_ENV_FILE=/etc/puet/pulse.env pnpm pki:init-ca /etc/puet/ca
+   sudo chown -R puet-pulse: /etc/puet/ca
    ```
    Зробіть офлайн-копію `ca.key.pem` (зашифрована флешка в сейфі). Для
    продакшену розгляньте апаратний модуль (HSM).
@@ -205,7 +208,7 @@ CSRF, open redirect, ізоляція неповнолітніх, підробк
 
 6. **Перший адміністратор.** Після першої синхронізації з HR (3.6):
    ```bash
-   PULSE_ENV_FILE=/etc/puet/pulse.env pnpm admin:bootstrap <службовий ID>
+   sudo PULSE_ENV_FILE=/etc/puet/pulse.env pnpm admin:bootstrap <службовий ID>
    ```
    Скрипт працює лише один раз, поки в системі немає жодного `SUPER_ADMIN`.
    Наступних адміністраторів призначають у панелі адміністрування.
@@ -329,8 +332,8 @@ Redis і ClamAV копіювати не потрібно. Зберігайте �
 
 ```bash
 cd /srv/puet-pulse/app && git pull && pnpm install --frozen-lockfile && pnpm build
-PULSE_ENV_FILE=/etc/puet/pulse.env pnpm db:deploy
-PULSE_ENV_FILE=/etc/puet/pulse.env pnpm db:seed   # додає нові дозволи, безпечно повторювати
+sudo PULSE_ENV_FILE=/etc/puet/pulse.env pnpm db:deploy
+sudo PULSE_ENV_FILE=/etc/puet/pulse.env pnpm db:seed   # додає нові дозволи, безпечно повторювати
 sudo systemctl restart puet-pulse-api
 ```
 

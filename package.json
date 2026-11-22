@@ -21,7 +21,8 @@
     "start:api": "node scripts/with-env.mjs node apps/api/dist/main.js",
     "demo:data": "node scripts/with-env.mjs pnpm --filter @puet/api run demo:data",
     "admin:bootstrap": "node scripts/with-env.mjs pnpm --filter @puet/api run admin:bootstrap",
-    "pki:init-ca": "node scripts/with-env.mjs pnpm --filter @puet/api run pki:init-ca"
+    "pki:init-ca": "node scripts/with-env.mjs pnpm --filter @puet/api run pki:init-ca",
+    "sync:send": "node scripts/with-env.mjs pnpm --filter @puet/api run sync:send"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

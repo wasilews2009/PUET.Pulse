@@ -1,0 +1,39 @@
+# Additions for ONE server that runs everything (pilot, docs/SERVER_SETUP.md):
+# Keycloak in production mode on the same PostgreSQL, and LiveKit for calls.
+#   docker compose -f docker-compose.yml -f infra/single-server/docker-compose.server.yml up -d
+# nginx on the host terminates TLS for pulse., sso. and meet. (infra/single-server/nginx-extra.conf).
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4.5
+    restart: unless-stopped
+    command: ["start"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: ${POSTGRES_USER}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_HOSTNAME: https://${SSO_HOST:?set SSO_HOST in .env}
+      KC_HTTP_ENABLED: "true"          # plain HTTP only between nginx and Keycloak on 127.0.0.1
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: kcadmin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?set KC_BOOTSTRAP_ADMIN_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:8081:8080"
+    volumes:
+      - ./infra/keycloak/configure-realm.sh:/opt/pulse/configure-realm.sh:ro
+    networks: [backend]
+
+  livekit:
+    image: livekit/livekit-server:v1.8.4
+    restart: unless-stopped
+    profiles: [calls]
+    command: ["--config", "/etc/livekit.yaml"]
+    network_mode: host                 # WebRTC needs the UDP port range on the host
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-}: ${LIVEKIT_API_SECRET:-}"
+    volumes:
+      - ./infra/single-server/livekit.yaml:/etc/livekit.yaml:ro
