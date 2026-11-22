@@ -64,6 +64,8 @@ On-premise, zero-trust, multi-tenant.
   резервні копії, пілот).
 - [docs/SERVER_SETUP.md](docs/SERVER_SETUP.md): покрокове встановлення на один сервер
   (безкоштовний Oracle Cloud Always Free або сервер університету).
+- [docs/ONPREM_SETUP.md](docs/ONPREM_SETUP.md): розгортання на серверах університету (мережа,
+  Active Directory, TLS, моніторинг, резервні копії, окремий сервер даних).
 - [docs/USER_GUIDE.md](docs/USER_GUIDE.md): як користуватися месенджером.
 
 ## Швидкий старт (пробний стенд)

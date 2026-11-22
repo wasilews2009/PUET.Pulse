@@ -126,9 +126,10 @@ packages/
 infra/                 Postgres init, MinIO bucket bootstrap + API account, nginx example (TLS 1.3, CSP),
                        demo Keycloak realm (trial only) + production realm script, systemd unit,
                        LiveKit config, demo.env.example, single-server/ (compose additions, env
-                       generator, nginx for sso / meet, nightly backup)
+                       generator, nginx for sso / meet, nightly backup), onprem/ (data-server ports)
 docs/                  DEPLOYMENT.md (trial, tests, university rollout), SERVER_SETUP.md
-                       (one-server pilot, step by step), USER_GUIDE.md
+                       (one-server pilot, step by step), ONPREM_SETUP.md (university servers,
+                       AD, two-server variant), USER_GUIDE.md
 scripts/with-env.mjs   loads ./.env (or PULSE_ENV_FILE) for root scripts; existing env wins
 assets/brand/          PUET logos (official SVG vectors, .ai source, raster originals)
 .claude/skills/        Design skills used for GUI work (Phase 5)
