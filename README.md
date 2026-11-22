@@ -57,18 +57,27 @@ On-premise, zero-trust, multi-tenant.
 | Вкладення (AES-256-GCM на пристрої) й опитування (події Megolm) у наскрізно зашифрованих кімнатах | `packages/e2ee/src/attachments.ts`, `apps/web/src/features/chat/E2eeContent.tsx` |
 | Десктопна обгортка Electron (без Node у сторінці, пісочниця, білий список переходів) | `apps/desktop` |
 
-## Швидкий старт
+## Документація
+
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): пробний запуск на одному комп'ютері з тестовими
+  користувачами, тестування, розгортання в університеті (сервери, Keycloak, LiveKit, TLS,
+  резервні копії, пілот).
+- [docs/USER_GUIDE.md](docs/USER_GUIDE.md): як користуватися месенджером.
+
+## Швидкий старт (пробний стенд)
 
 ```bash
-cp .env.example .env          # замініть усі CHANGE_ME
-pnpm install
-pnpm infra:up                 # PostgreSQL, Redis, MinIO, ClamAV
-pnpm db:deploy                # міграції
-pnpm db:seed                  # тенанти та структура ПУЕТ
-pnpm build && pnpm test
-node apps/api/dist/main.js    # GET /health -> 200
-pnpm --filter @puet/web dev   # веб-клієнт на http://localhost:5173 (проксі /api -> :3000)
+cp infra/demo.env.example .env          # лише для пробного стенда; для сервера: .env.example
+docker compose --profile demo up -d     # PostgreSQL, Redis, MinIO, ClamAV, демо-Keycloak
+pnpm install && pnpm build
+pnpm db:deploy && pnpm db:seed          # міграції, структура ПУЕТ
+pnpm start:api                          # API на :3000 (GET /health -> 200)
+pnpm demo:data                          # тестові люди через підписану синхронізацію
+pnpm admin:bootstrap DEMO-ADMIN         # перший адміністратор
+pnpm --filter @puet/web dev             # http://localhost:5173, вхід student / Pulse-demo-2026
 ```
+
+Кореневі скрипти читають `./.env` (або файл з `PULSE_ENV_FILE`) через `scripts/with-env.mjs`.
 
 У продакшені `apps/web/dist` віддає reverse proxy з того ж домену, що й API
 (приклад: `infra/nginx/pulse.conf`); `WEB_ORIGIN` має збігатися з цим доменом.

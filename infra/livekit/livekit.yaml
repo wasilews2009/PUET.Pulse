@@ -1,0 +1,20 @@
+# Example LiveKit SFU config for PUET.Pulse calls (Phase 7), on its own host
+# (e.g. meet.pulse.puet.edu.ua). Keys are passed in the environment, not here:
+#   LIVEKIT_KEYS="<LIVEKIT_API_KEY>: <LIVEKIT_API_SECRET>" livekit-server --config livekit.yaml
+# The same key and secret go into the API settings (LIVEKIT_API_KEY / LIVEKIT_API_SECRET).
+port: 7880
+bind_addresses: ["127.0.0.1"]      # TLS (wss://) terminates at nginx in front of it
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000          # open UDP 50000-60000 in the firewall
+  port_range_end: 60000
+  use_external_ip: true
+room:
+  empty_timeout: 300
+  max_participants: 300
+webhook:
+  api_key: CHANGE_ME_LIVEKIT_API_KEY # must equal LIVEKIT_API_KEY
+  urls:
+    - https://pulse.puet.edu.ua/api/calls/livekit/webhook
+logging:
+  level: info
