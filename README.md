@@ -8,7 +8,7 @@ On-premise, zero-trust, multi-tenant.
 
 > Правила архітектури та безпеки: [CLAUDE.md](CLAUDE.md).
 
-## Стан: Фази 1–6 виконано
+## Стан: Фази 1–9 виконано
 
 | Що | Де |
 |---|---|
@@ -49,6 +49,13 @@ On-premise, zero-trust, multi-tenant.
 | «ЄДЕБО / Деканат» (замовлення довідок, статус ІНП), «Розклад ПУЕТ» (зміни аудиторій, посилання Moodle / Zoom) | `apps/api/src/bots` |
 | «Сервіс-деск АГР та ІТ» (заявки, черга служби, гуртожитки через коменданта), «ЕДО та Канцелярія» (погодження, реєстрація наказів) | `apps/api/src/bots` |
 | AI-консультант приймальної комісії: пошук по чинних правилах прийому, цитати або (за бажанням) відповідь Claude | `apps/api/src/bots/admissions` |
+| **Фаза 9.** Переглядач: мініатюри, зміст, закладки, пошук у тексті, завантаження сторінок частинами, IP у водяному знаку | `apps/api/src/files`, `apps/web/src/features/files` |
+| PAdES з видимим штампом і QR-кодом на сторінку перевірки (копія PDF з підписом, валідна в `pdfsig`) | `apps/api/src/pki/pades.ts` |
+| Анонімні звернення до Омбудсмана, психологічної служби, військового обліку: окремий псевдонім з власним E2EE-пристроєм | `apps/api/src/trust`, `apps/web/src/features/trust` |
+| Фільтр контенту для неповнолітніх (нецензурна лексика, сторонні посилання) на сервері і на пристрої в E2EE-чатах | `packages/shared/src/content-filter.ts` |
+| «Переслати» файл в інший чат; файли Канцелярії, кадрів, фінансів, юристів не виходять за межі підрозділу | `apps/api/src/files/file-forward.service.ts` |
+| Вкладення (AES-256-GCM на пристрої) й опитування (події Megolm) у наскрізно зашифрованих кімнатах | `packages/e2ee/src/attachments.ts`, `apps/web/src/features/chat/E2eeContent.tsx` |
+| Десктопна обгортка Electron (без Node у сторінці, пісочниця, білий список переходів) | `apps/desktop` |
 
 ## Швидкий старт
 
@@ -76,10 +83,11 @@ pnpm --filter @puet/web dev   # веб-клієнт на http://localhost:5173 (
 Фази 7: `LIVEKIT_URL`, `LIVEKIT_PUBLIC_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`
 (порожній `LIVEKIT_URL` вимикає дзвінки; вебхук LiveKit налаштуйте на `https://<хост>/api/calls/livekit/webhook`);
 Фази 8: `OUTBOX_DEANERY_*`, `OUTBOX_EDO_*`, `SCHEDULE_LINK_HOSTS`, `ADMISSIONS_*`, `ANTHROPIC_API_KEY`
-(вебхуки `POST /api/integrations/deanery`, `/schedule`, `/edo` з типами клієнтів `DEANERY`, `SCHEDULE`, `EDO`)
+(вебхуки `POST /api/integrations/deanery`, `/schedule`, `/edo` з типами клієнтів `DEANERY`, `SCHEDULE`, `EDO`);
+Фази 9: `TRUST_INTAKE_SECRET` (без нього анонімні звернення вимкнені), `MINOR_LINK_HOSTS`
 (див. `.env.example`). Після оновлення запустіть `pnpm db:deploy && pnpm db:seed` (Фаза 6 додає нові
 дозволи `poll.create`, `poll.manage`, `message.ack`; Фаза 7: `call.*`, `consultation.*`; Фаза 8: `bot.use`, `deanery.use`, `schedule.read`,
-`ticket.*`, `admissions.kb.manage`).
+`ticket.*`, `admissions.kb.manage`; Фаза 9: `trust.intake`, `file.forward` і роль `ANONYMOUS_REQUESTER`).
 
 Внутрішній ЦСК створюється один раз, ключі зберігаються поза репозиторієм:
 

@@ -104,6 +104,7 @@ apps/
     src/consultations/ lecturers' consultation slots and bookings
     src/bots/          corporate bots: inboxes, deanery, schedule, service desk,
                        chancellery, signed outbox, admissions consultant (RAG)
+    src/trust/         anonymous appeals to trust services (pseudonyms, persona header)
     scripts/init-ca.ts one-time creation of the internal CA (keys outside the repo)
   web/                 React 19 + Vite PWA client (served next to the API, /api prefix)
     src/api/           fetch client, DTO types, React Query hooks, batched cards
@@ -111,8 +112,10 @@ apps/
                        settings, admin
     src/i18n/          uk (default) and en dictionaries, same keys
     src/theme/         PUET tokens, Light / Dark, sanitized white-label overrides
+  desktop/             Hardened Electron wrapper around the web client of one server
 packages/
-  shared/              Domain vocabulary: tenants, roles, actions, channel types
+  shared/              Domain vocabulary: tenants, roles, actions, channel types,
+                       content filter for minors (used by API and web)
   policy-engine/       Pure RBAC + ABAC policy decision point (no I/O)
   e2ee/                Client E2EE layer (vodozemac Olm/Megolm, backup, QR)
   signing/             Client УЕП: non-extractable WebCrypto keys, CSR, CAdES-BES (PKI.js)
@@ -230,8 +233,8 @@ the same rules. Evaluation order, first deny wins, default deny:
 - Confidential files must be PDFs: view-only, every view watermarked with the
   viewer's name, corporate id and time; download denied by the policy engine.
   Served files carry `Cache-Control: no-store`, `nosniff` and a sandbox CSP.
-- Attachments are refused in `MANDATORY` E2EE channels (the server cannot scan
-  client-encrypted bytes) until encrypted attachments are designed.
+- Plaintext attachments are refused in `MANDATORY` E2EE channels (the server
+  cannot scan client-encrypted bytes); those rooms use encrypted blobs (Phase 9).
 - Approvers of a route may view and sign that one file without membership
   (`Resource.isApprover`, computed by the resolver); only they decide
   (`document.approve`). Steps are decided in order; approving a step that
@@ -355,6 +358,42 @@ the same rules. Evaluation order, first deny wins, default deny:
   answers expire after 30 days and are purged. Only staff of the Admissions
   Office upload or activate the rules (`admissions.kb.manage`).
 
+**Viewer, PAdES, trust intake, minors, DLP, E2EE content, desktop (Phase 9)**
+
+- Viewer: the outline is read during CDR as plain data (explicit destinations
+  only, capped); byte ranges only for non-confidential PDFs; confidential views
+  are served whole with a watermark naming the viewer, corporate id, IP and
+  time, and their search shows no snippets. The served-bytes cache is reused
+  only by ranged viewer reads; signing, verification and downloads re-hash.
+- PAdES (`pki/pades.ts`): stamp + empty signature field over the served PDF,
+  the client signs the byte-range digest (CMS without signing-time), the CMS
+  is checked through the `SignatureProvider`; exactly one ByteRange covering
+  the whole file. Confidential documents get detached CAdES only.
+- Anonymous appeals (`src/trust`): one PSEUDONYM user per appeal
+  (`ANONYMOUS_REQUESTER`), member only of its MANDATORY trust room with the
+  service's officers; the client acts as it via `X-Pulse-Persona`, checked
+  against HMAC(`TRUST_INTAKE_SECRET`, user id). The link is never stored in
+  plain form or audited; the audit names the pseudonym. Pseudonyms are
+  confined by the engine (`pseudonym.scope`) and DB triggers, have their own
+  E2EE device, and are revoked when the person is offboarded.
+- Minors: plaintext written by a minor or into a channel with a minor must
+  pass `minorContentFlags` (obscene vocabulary, links outside puet.edu.ua and
+  `MINOR_LINK_HOSTS`; staff may post links); denials are audited with the
+  rule, never the text. In E2EE chats the minor's own client applies it.
+- Forwarding (`file.forward`): evaluated on the target channel with
+  server-computed `forwardSource`; confidential files never move, units with
+  `forbid_external_forward` keep files in their own channels, no forwarding
+  into MANDATORY rooms. Only the served bytes are copied.
+- E2EE rooms: attachments are AES-256-GCM per file on the device (key in the
+  Megolm message, ciphertext in `encrypted_blobs`, immutable, E2EE channels
+  only); receivers verify the hash, sniff the bytes against the allowlist and
+  show files only in sandboxed viewers, since the server cannot scan them.
+  Polls are Megolm events tallied on each device (votes visible to members);
+  formal votes stay in DISABLED governance channels.
+- Desktop (`apps/desktop`): no Node in the page, context isolation, sandbox,
+  empty preload, navigation allowlist, permissions only for calls and
+  notifications of the configured origin.
+
 ## 5. Organizational topology and data model
 
 - **Tenants:** `PUET_MAIN`, `PUET_LYCEUM` (strict minor protection),
@@ -446,7 +485,7 @@ section apply only to marketing pages, not to the messenger app.
 - **Phase 8 (done):** corporate bots over REST / webhooks: ЄДЕБО / Деканат, Розклад ПУЕТ,
   Service desk АГР та ІТ (dormitory repair tickets), ЕДО та Канцелярія, admissions
   AI consultant (RAG over the admission rules).
-- **Phase 9:** viewer thumbnails, bookmarks and full-text search, IP in the
+- **Phase 9 (done):** viewer thumbnails, bookmarks and full-text search, IP in the
   watermark, PAdES with a visual QR stamp, anonymous intake for trust services,
   content filters for minors, no forwarding of files outside, desktop wrapper,
   polls and attachments in encrypted rooms.
