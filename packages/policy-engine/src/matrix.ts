@@ -38,6 +38,7 @@ const MEMBER_BASICS = [
   A.TICKET_CREATE,
   A.TICKET_READ,
   A.TICKET_UPDATE,
+  A.TRUST_INTAKE,
 ] as const;
 
 /** Teaching staff publish consultation slots and manage them. */
@@ -114,4 +115,6 @@ export const DEFAULT_PERMISSION_MATRIX: PermissionMatrix = {
   [RoleCode.GROUP_LEADER]: [...MEMBER_BASICS, A.DM_START, A.DIRECTORY_SEARCH, A.CHANNEL_CREATE],
   [RoleCode.GUEST]: [A.SESSION_READ, A.CHANNEL_LIST, A.PRESENCE_UPDATE, A.CHANNEL_READ, A.MESSAGE_READ, A.MESSAGE_SEND, A.FILE_VIEW, A.VOTE_CAST, A.MESSAGE_ACK, A.CALL_JOIN, A.BOT_USE],
   [RoleCode.INTEGRATION]: [A.SYNC_INGEST],
+  // The pseudonym of an anonymous appeal: its own devices and keys, and its one trust room.
+  [RoleCode.ANONYMOUS_REQUESTER]: [A.CHANNEL_LIST, A.DEVICE_MANAGE, A.E2EE_KEYS_ACCESS, A.CHANNEL_READ, A.MESSAGE_READ, A.MESSAGE_SEND, A.USER_PROFILE_READ],
 };

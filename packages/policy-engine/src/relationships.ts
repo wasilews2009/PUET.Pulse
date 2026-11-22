@@ -24,6 +24,12 @@ export function canSeeInDirectory(principal: Principal, target: TargetUserFacts)
   if (principal.kind === PrincipalKind.GUEST) return false;
   if (target.userId === principal.userId) return true;
   if (target.status !== AccountStatus.ACTIVE) return false;
+  // Anonymous appeals: the pseudonym sees staff of its tenant (the officers), and only
+  // staff of that tenant see the pseudonym's card (an alias, nothing else).
+  if (principal.kind === PrincipalKind.PSEUDONYM || target.kind === PrincipalKind.PSEUDONYM) {
+    const other = principal.kind === PrincipalKind.PSEUDONYM ? target : principal;
+    return principal.tenantId === target.tenantId && other.kind === PrincipalKind.STAFF;
+  }
   if (target.isMinor || principal.isMinor) return minorContactAllowed(principal, target);
   if (target.kind === PrincipalKind.GUEST) return principal.kind === PrincipalKind.STAFF;
   if (principal.tenantId !== target.tenantId) {
@@ -37,6 +43,7 @@ export function canSeeInDirectory(principal: Principal, target: TargetUserFacts)
  */
 export function checkDirectMessage(principal: Principal, target: TargetUserFacts): string | null {
   if (target.userId === principal.userId) return 'dm.self';
+  if (principal.kind === PrincipalKind.PSEUDONYM || target.kind === PrincipalKind.PSEUDONYM) return 'pseudonym.no_dm';
   if (target.status !== AccountStatus.ACTIVE) return 'dm.target_inactive';
   if (principal.kind === PrincipalKind.GUEST) return 'guest.isolation';
 

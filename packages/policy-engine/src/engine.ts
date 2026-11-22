@@ -111,6 +111,17 @@ export interface PolicyEngineOptions {
   phoneAccessOrgUnitIds?: readonly string[];
 }
 
+/** Everything a pseudonym (anonymous appeal) may ever do, whatever a matrix override says. */
+const PSEUDONYM_ACTIONS: ReadonlySet<string> = new Set([
+  Action.CHANNEL_LIST,
+  Action.DEVICE_MANAGE,
+  Action.E2EE_KEYS_ACCESS,
+  Action.CHANNEL_READ,
+  Action.MESSAGE_READ,
+  Action.MESSAGE_SEND,
+  Action.USER_PROFILE_READ,
+]);
+
 const deny = (reason: string, extra: Partial<Decision> = {}): Decision => ({
   allowed: false,
   reason,
@@ -275,6 +286,16 @@ export class PolicyEngine {
     // Machine principals only ingest sync data, and only machines may do so.
     if ((principal.kind === PrincipalKind.SERVICE_BOT) !== (action === Action.SYNC_INGEST)) {
       return deny('principal.kind_mismatch');
+    }
+
+    // Pseudonyms of anonymous appeals: their own devices and keys, and trust rooms they are in. Nothing else.
+    if (principal.kind === PrincipalKind.PSEUDONYM) {
+      if (!PSEUDONYM_ACTIONS.has(action)) return deny('pseudonym.scope');
+      if (CHANNEL_SCOPED_RESOURCES.has(resource.type) && resource.channelType !== ChannelType.TRUST_ROOM) return deny('pseudonym.scope');
+    }
+    // Anonymous appeals are opened by people, never by a pseudonym, guest or machine.
+    if (action === Action.TRUST_INTAKE && principal.kind !== PrincipalKind.STAFF && principal.kind !== PrincipalKind.STUDENT) {
+      return deny('trust.intake_people_only');
     }
 
     // Own-account resources (settings, devices, key backup) belong to exactly one user.

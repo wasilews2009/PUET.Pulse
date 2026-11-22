@@ -702,3 +702,53 @@ describe('corporate bots and service desk (Phase 8)', () => {
     expect(engine.evaluate(office, Action.ADMISSIONS_KB_MANAGE, bot('DEANERY', { orgUnitId: OU_ADMISSIONS }), env()).reason).toBe('resource.type_mismatch');
   });
 });
+
+describe('anonymous appeals to trust services (Phase 9)', () => {
+  const pseudonym = (over: Partial<Principal> = {}) =>
+    principal({
+      userId: 'u-pseudonym',
+      kind: PrincipalKind.PSEUDONYM,
+      roles: [{ role: RoleCode.ANONYMOUS_REQUESTER, tenantId: T_MAIN }],
+      instituteIds: [],
+      academicGroupIds: [],
+      activeCourseOfferingIds: [],
+      ...over,
+    });
+  const room = channel({ id: 'ch-appeal', channelType: ChannelType.TRUST_ROOM, e2eeMode: E2eeMode.MANDATORY, isMember: true, instituteId: undefined, departmentId: undefined });
+  const self = { type: ResourceType.SELF, tenantId: T_MAIN, ownerId: 'u-student' };
+
+  it('people open appeals; pseudonyms, guests and machines cannot', () => {
+    expect(engine.can(student(), Action.TRUST_INTAKE, self, env())).toBe(true);
+    expect(engine.can(pseudonym({ userId: 'u-student' }), Action.TRUST_INTAKE, self, env())).toBe(false);
+    const guest = principal({ kind: PrincipalKind.GUEST, roles: [{ role: RoleCode.GUEST, tenantId: T_MAIN }] });
+    expect(engine.can(guest, Action.TRUST_INTAKE, self, env())).toBe(false);
+  });
+
+  it('a pseudonym reads and writes only in the trust room it is a member of', () => {
+    expect(engine.can(pseudonym(), Action.MESSAGE_SEND, room, env())).toBe(true);
+    expect(engine.can(pseudonym(), Action.MESSAGE_READ, room, env())).toBe(true);
+    expect(engine.evaluate(pseudonym(), Action.MESSAGE_READ, channel(), env()).reason).toBe('pseudonym.scope');
+    expect(engine.can(pseudonym(), Action.MESSAGE_READ, { ...room, id: 'ch-other-appeal', isMember: false, memberRole: undefined }, env())).toBe(false);
+  });
+
+  it('a pseudonym cannot search the directory, start DMs, upload files or vote, even if a matrix override allowed it', () => {
+    const lenient = new PolicyEngine({
+      phoneAccessOrgUnitIds: [OU_HR],
+      matrix: { [RoleCode.ANONYMOUS_REQUESTER]: [Action.DIRECTORY_SEARCH, Action.DM_START, Action.FILE_UPLOAD, Action.VOTE_CAST, Action.MESSAGE_READ] },
+    });
+    expect(lenient.evaluate(pseudonym(), Action.DIRECTORY_SEARCH, { type: ResourceType.DIRECTORY, tenantId: T_MAIN }, env()).reason).toBe('pseudonym.scope');
+    expect(lenient.evaluate(pseudonym(), Action.DM_START, userResource(target({ kind: PrincipalKind.STAFF })), env()).reason).toBe('pseudonym.scope');
+    expect(lenient.evaluate(pseudonym(), Action.FILE_UPLOAD, room, env()).reason).toBe('pseudonym.scope');
+    expect(lenient.evaluate(pseudonym(), Action.VOTE_CAST, room, env()).reason).toBe('pseudonym.scope');
+  });
+
+  it('directory: officers (staff of the tenant) see the alias card; other students and other tenants do not', () => {
+    const alias = target({ userId: 'u-pseudonym', kind: PrincipalKind.PSEUDONYM, roles: [RoleCode.ANONYMOUS_REQUESTER] });
+    expect(canSeeInDirectory(lecturer(), alias)).toBe(true);
+    expect(canSeeInDirectory(student(), alias)).toBe(false);
+    expect(canSeeInDirectory(lecturer({ tenantId: T_COLLEGE }), alias)).toBe(false);
+    // The pseudonym sees staff of its tenant (the officers), never students.
+    expect(canSeeInDirectory(pseudonym(), target({ kind: PrincipalKind.STAFF }))).toBe(true);
+    expect(canSeeInDirectory(pseudonym(), target())).toBe(false);
+  });
+});

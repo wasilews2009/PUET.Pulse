@@ -1,3 +1,4 @@
+import { TrustIntakeService } from '../trust/trust-intake.service';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Prisma, RoleCode as DbRoleCode } from '@puet/database';
 import { RoleCode } from '@puet/shared';
@@ -36,6 +37,7 @@ export class SyncService {
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(SESSION_STORE) private readonly sessions: SessionStore,
     @Inject(REALTIME_BUS) private readonly bus: RealtimeBus,
+    @Inject(TrustIntakeService) private readonly trust: TrustIntakeService,
   ) {}
 
   async syncStudents(tenantId: string, records: StudentRecord[], actorId: string): Promise<SyncResult> {
@@ -192,8 +194,11 @@ export class SyncService {
     });
     if (!user) return false;
 
+    // Anonymous appeals: closed, and their pseudonyms stop working with the person's account.
+    const pseudonyms = await this.trust.pseudonymsOf(userId);
+    await this.trust.offboard(userId);
     await this.sessions.destroyAllForUser(userId);
-    await this.bus.disconnectUsers([userId]);
+    await this.bus.disconnectUsers([userId, ...pseudonyms]);
     await this.audit.record({
       actorId,
       tenantId: user.tenantId,

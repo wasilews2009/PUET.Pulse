@@ -43,6 +43,12 @@ export const RoleCode = {
   GUEST: 'GUEST',
   /** Machine principal for ЄДЕБО / HR / ERP webhooks. Never assigned to a person. */
   INTEGRATION: 'INTEGRATION',
+  /**
+   * Phase 9: the pseudonym of an anonymous appeal to a trust service. Held only
+   * by PSEUDONYM principals, which the server creates per appeal; never assigned
+   * in the admin panel or by a sync.
+   */
+  ANONYMOUS_REQUESTER: 'ANONYMOUS_REQUESTER',
 } as const;
 export type RoleCode = (typeof RoleCode)[keyof typeof RoleCode];
 
@@ -63,6 +69,8 @@ export const PrincipalKind = {
   STUDENT: 'STUDENT',
   GUEST: 'GUEST',
   SERVICE_BOT: 'SERVICE_BOT',
+  /** Phase 9: per-appeal pseudonym of a person writing anonymously to a trust service. */
+  PSEUDONYM: 'PSEUDONYM',
 } as const;
 export type PrincipalKind = (typeof PrincipalKind)[keyof typeof PrincipalKind];
 
@@ -197,6 +205,8 @@ export const Action = {
   TICKET_HANDLE: 'ticket.handle',
   /** Phase 8: upload and activate the admission rules the consultant answers from (Admissions Office). */
   ADMISSIONS_KB_MANAGE: 'admissions.kb.manage',
+  /** Phase 9: open, list and close one's anonymous appeals to the trust services. */
+  TRUST_INTAKE: 'trust.intake',
 } as const;
 export type Action = (typeof Action)[keyof typeof Action];
 

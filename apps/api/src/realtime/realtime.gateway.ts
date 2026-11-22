@@ -1,3 +1,4 @@
+import { TrustIntakeService } from '../trust/trust-intake.service';
 import { Inject, Logger, OnModuleDestroy, UseGuards } from '@nestjs/common';
 import {
   ConnectedSocket,
@@ -51,6 +52,7 @@ export class RealtimeGateway implements OnGatewayInit<Server>, OnModuleDestroy {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(REALTIME_BUS) private readonly bus: RealtimeBus,
     @Inject(MessagingService) private readonly messaging: MessagingService,
+    @Inject(TrustIntakeService) private readonly trust: TrustIntakeService,
   ) {}
 
   afterInit(server: Server) {
@@ -64,6 +66,9 @@ export class RealtimeGateway implements OnGatewayInit<Server>, OnModuleDestroy {
         socket.data.principal = resolved.principal;
         socket.data.sessionToken = resolved.token;
         await socket.join(userRoom(resolved.principal.userId));
+        // Events of the person's anonymous appeals reach the same socket; the pseudonym ids never leave the server here.
+        const pseudonyms = await this.trust.pseudonymsOf(resolved.principal.userId);
+        if (pseudonyms.length) await socket.join(pseudonyms.map(userRoom));
         next();
       } catch (err) {
         this.logger.error('WebSocket handshake failed', err as Error);

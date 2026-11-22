@@ -60,7 +60,7 @@ export const promoteInput = z.object({
   dryRun: z.boolean().default(false),
 });
 
-const assignableRoles = Object.values(RoleCode).filter((r) => r !== RoleCode.INTEGRATION) as [string, ...string[]];
+const assignableRoles = Object.values(RoleCode).filter((r) => r !== RoleCode.INTEGRATION && r !== RoleCode.ANONYMOUS_REQUESTER) as [string, ...string[]];
 
 export const roleGrantInput = z.object({
   userId: uuid,

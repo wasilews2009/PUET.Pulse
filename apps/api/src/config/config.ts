@@ -74,6 +74,8 @@ const schema = z.object({
   PKI_CERT_DAYS: z.coerce.number().int().min(30).max(825).default(365),
   /** Secret for document verification codes (QR). At least 32 characters. */
   VERIFY_CODE_SECRET: optional(z.string().min(32)),
+  /** Phase 9: keys the HMAC tag that links an anonymous appeal to its requester. */
+  TRUST_INTAKE_SECRET: optional(z.string().min(32)),
   /** On-premise QES gateway (IIT EUSignCP server) for КЕП. Unset: QES signing is unavailable. */
   QES_GATEWAY_URL: optional(z.string().url()),
   QES_GATEWAY_TOKEN: optional(z.string().min(16)),
@@ -134,6 +136,8 @@ export interface AppConfig {
     qes: { url: string; token: string } | null;
   };
   livekit: { url: string; publicUrl: string; apiKey: string; apiSecret: string } | null;
+  /** Anonymous appeals to trust services are off unless the secret is set. */
+  trustIntakeSecret?: string;
   bots: {
     outbox: Partial<Record<'DEANERY' | 'EDO', { url: string; secret: string }>>;
     scheduleLinkHosts: string[];
@@ -208,6 +212,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       ...(e.VERIFY_CODE_SECRET ? { verifyCodeSecret: e.VERIFY_CODE_SECRET } : {}),
       qes: e.QES_GATEWAY_URL && e.QES_GATEWAY_TOKEN ? { url: e.QES_GATEWAY_URL, token: e.QES_GATEWAY_TOKEN } : null,
     },
+    ...(e.TRUST_INTAKE_SECRET ? { trustIntakeSecret: e.TRUST_INTAKE_SECRET } : {}),
     livekit:
       e.LIVEKIT_URL && e.LIVEKIT_API_KEY && e.LIVEKIT_API_SECRET
         ? {

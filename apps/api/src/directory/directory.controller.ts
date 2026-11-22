@@ -78,6 +78,8 @@ export class DirectoryController {
     const rows = await this.prisma.user.findMany({
       where: {
         status: 'ACTIVE',
+        // Pseudonyms of anonymous appeals are never searchable (their cards are shown only by id).
+        kind: { not: 'PSEUDONYM' },
         // Students and guests search their own tenant only; staff also see staff of other tenants.
         ...(principal.kind === 'STAFF' ? {} : { tenantId: principal.tenantId }),
         OR: [{ fullNameUk: { contains: q, mode: 'insensitive' } }, { fullNameEn: { contains: q, mode: 'insensitive' } }],

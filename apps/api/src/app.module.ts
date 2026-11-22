@@ -80,6 +80,8 @@ import { ProvisioningService } from './provisioning/provisioning.service';
 import { REALTIME_BUS, RedisRealtimeBus } from './realtime/realtime.bus';
 import { RealtimeGateway } from './realtime/realtime.gateway';
 import { PrismaService } from './prisma/prisma.service';
+import { TrustController } from './trust/trust.controller';
+import { TrustIntakeService } from './trust/trust-intake.service';
 import { SessionAuthService } from './session/session-auth.service';
 import { SessionMiddleware } from './session/session.middleware';
 import { RedisSessionStore, SESSION_STORE } from './session/session.store';
@@ -104,6 +106,7 @@ export const REDIS = Symbol('REDIS');
     BotsController,
     IntegrationsController,
     AdminController,
+    TrustController,
   ],
   providers: [
     { provide: APP_CONFIG, useFactory: () => loadConfig() },
@@ -167,6 +170,7 @@ export const REDIS = Symbol('REDIS');
     E2eeService,
     RealtimeGateway,
     PrismaService,
+    TrustIntakeService,
     AuditService,
     PrincipalFactory,
     SessionAuthService,

@@ -52,6 +52,8 @@ enum PrincipalKind {
   STUDENT
   GUEST
   SERVICE_BOT
+  /// Phase 9: per-appeal pseudonym of a person writing anonymously to a trust service.
+  PSEUDONYM
 }
 
 enum Locale {
@@ -99,6 +101,7 @@ enum RoleCode {
   GROUP_LEADER
   GUEST
   INTEGRATION
+  ANONYMOUS_REQUESTER
 }
 
 /// Who created a role grant. The sync replaces only its own grants and never touches ADMIN ones.
@@ -256,6 +259,7 @@ model Tenant {
   abacPolicies    AbacPolicy[]
   files           FileObject[]
   approvalRoutes  ApprovalRoute[]
+  anonymousCases  AnonymousCase[]
 
   @@map("tenants")
 }
@@ -329,13 +333,14 @@ model OrgUnit {
   createdAt             DateTime    @default(now()) @map("created_at")
   updatedAt             DateTime    @updatedAt @map("updated_at")
 
-  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  parent      OrgUnit?        @relation("OrgUnitTree", fields: [parentId], references: [id], onDelete: Restrict)
-  children    OrgUnit[]       @relation("OrgUnitTree")
-  members     StaffOrgUnit[]
-  channels    Channel[]
-  dormitories Dormitory[]
-  tickets     ServiceTicket[]
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  parent         OrgUnit?        @relation("OrgUnitTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children       OrgUnit[]       @relation("OrgUnitTree")
+  members        StaffOrgUnit[]
+  channels       Channel[]
+  dormitories    Dormitory[]
+  tickets        ServiceTicket[]
+  anonymousCases AnonymousCase[]
 
   @@unique([tenantId, code])
   @@index([tenantId, kind])
@@ -542,6 +547,7 @@ model User {
   annotations      PdfAnnotation[]          @relation("AnnotationAuthor")
   fileBookmarks    FileBookmark[]
   padesDrafts      PadesDraft[]
+  pseudonymCase    AnonymousCase?           @relation("CasePseudonym")
   devices          Device[]
   crossSigningKeys CrossSigningKey[]
   keyBackups       KeyBackupVersion[]
@@ -863,9 +869,42 @@ model Channel {
   files          FileObject[]
   polls          Poll[]
   calls          Call[]
+  anonymousCase  AnonymousCase?
 
   @@index([tenantId, type])
   @@map("channels")
+}
+
+/// Anonymous appeal to a trust service (Ombudsman, Psychological Service, Military
+/// Registration). The person writes as a server-created pseudonym; the officers see
+/// only the alias. Who is behind it is stored as an HMAC tag (TRUST_INTAKE_SECRET),
+/// never as a user id, so the table alone does not name the requester.
+model AnonymousCase {
+  id           String              @id @default(uuid()) @db.Uuid
+  tenantId     String              @map("tenant_id") @db.Uuid
+  orgUnitId    String              @map("org_unit_id") @db.Uuid
+  channelId    String              @unique @map("channel_id") @db.Uuid
+  pseudonymId  String              @unique @map("pseudonym_id") @db.Uuid
+  requesterTag String              @map("requester_tag")
+  /// Short public label, e.g. "7K4Q".
+  alias        String
+  status       AnonymousCaseStatus @default(OPEN)
+  createdAt    DateTime            @default(now()) @map("created_at")
+  closedAt     DateTime?           @map("closed_at")
+
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  orgUnit   OrgUnit @relation(fields: [orgUnitId], references: [id], onDelete: Restrict)
+  channel   Channel @relation(fields: [channelId], references: [id], onDelete: Restrict)
+  pseudonym User    @relation("CasePseudonym", fields: [pseudonymId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, alias])
+  @@index([requesterTag])
+  @@map("anonymous_cases")
+}
+
+enum AnonymousCaseStatus {
+  OPEN
+  CLOSED
 }
 
 model ChannelMember {
