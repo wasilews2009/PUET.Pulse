@@ -1,4 +1,4 @@
-import { Paperclip, PaperPlaneRight } from '@phosphor-icons/react';
+import { ChartBar, Paperclip, PaperPlaneRight } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -7,6 +7,8 @@ import { keys } from '../../api/queries';
 import type { Channel, FileItem } from '../../api/types';
 import { cx, IconButton, InlineError, Toggle } from '../../components/ui';
 import { getSocket } from '../../realtime/socket';
+import { NewPollDialog } from '../polls/NewPollDialog';
+import { isModerator } from './channel-utils';
 import { useSend } from './useSend';
 
 const MAX_MB = 50;
@@ -22,6 +24,12 @@ export function Composer({ channel, threadRootId = null, onUploaded }: { channel
   const send = useSend(channel, threadRootId);
   // The server cannot scan client-encrypted bytes, so MANDATORY E2EE channels take no attachments yet.
   const attachAllowed = channel.e2eeMode !== 'MANDATORY' && !threadRootId;
+  // Polls are stored readable by the server, so only unencrypted channels offer them (same rule as the API).
+  const moderated = channel.type === 'GOVERNANCE' || channel.type === 'ANNOUNCEMENT' || channel.type === 'EMERGENCY';
+  const pollAllowed = !threadRootId && channel.e2eeMode === 'DISABLED' && (!moderated || isModerator(channel));
+  const directiveAllowed = !threadRootId && isModerator(channel);
+  const [pollOpen, setPollOpen] = useState(false);
+  const [directive, setDirective] = useState(false);
 
   const upload = useMutation({
     mutationFn: async (file: File) => {
@@ -43,9 +51,10 @@ export function Composer({ channel, threadRootId = null, onUploaded }: { channel
   const submit = () => {
     const body = text.trim();
     if (!body || send.isPending) return;
-    send.mutate(body, {
+    send.mutate({ text: body, requiresAck: directive && directiveAllowed }, {
       onSuccess: () => {
         setText('');
+        setDirective(false);
         setError(null);
       },
       onError: () => setError(t('message.failed')),
@@ -110,6 +119,11 @@ export function Composer({ channel, threadRootId = null, onUploaded }: { channel
             </IconButton>
           </>
         )}
+        {pollAllowed && (
+          <IconButton label={t('poll.create')} onClick={() => setPollOpen(true)}>
+            <ChartBar size={22} />
+          </IconButton>
+        )}
         <label className="min-w-0 flex-1">
           <span className="sr-only">{threadRootId ? t('message.placeholderThread') : t('message.placeholder')}</span>
           <textarea
@@ -134,11 +148,15 @@ export function Composer({ channel, threadRootId = null, onUploaded }: { channel
           <PaperPlaneRight size={20} weight="fill" />
         </button>
       </form>
-      {attachAllowed && !threadRootId && channel.type !== 'DIRECT' && channel.type !== 'PRIVATE_GROUP' && (
-        <div className="mt-2">
-          <Toggle checked={confidential} onChange={setConfidential} label={t('message.attachConfidential')} />
+      {((attachAllowed && channel.type !== 'DIRECT' && channel.type !== 'PRIVATE_GROUP') || directiveAllowed) && (
+        <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
+          {attachAllowed && channel.type !== 'DIRECT' && channel.type !== 'PRIVATE_GROUP' && (
+            <Toggle checked={confidential} onChange={setConfidential} label={t('message.attachConfidential')} />
+          )}
+          {directiveAllowed && <Toggle checked={directive} onChange={setDirective} label={t('directive.toggle')} />}
         </div>
       )}
+      {pollAllowed && <NewPollDialog channel={channel} open={pollOpen} onClose={() => setPollOpen(false)} />}
     </div>
   );
 }

@@ -20,8 +20,9 @@ export function useSend(channel: Channel, threadRootId: string | null) {
   const qc = useQueryClient();
   const me = useMe();
   return useMutation({
-    mutationFn: async (text: string): Promise<Message> => {
-      const base = { clientMessageId: clientId(), ...(threadRootId ? { threadRootId } : {}) };
+    mutationFn: async (input: string | { text: string; requiresAck?: boolean }): Promise<Message> => {
+      const { text, requiresAck } = typeof input === 'string' ? { text: input, requiresAck: false } : input;
+      const base = { clientMessageId: clientId(), ...(threadRootId ? { threadRootId } : {}), ...(requiresAck ? { requiresAck: true } : {}) };
       if (!encrypted(channel)) {
         return api<Message>(`/channels/${channel.id}/messages`, { method: 'POST', body: { ...base, body: text } });
       }

@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery, type QueryClient } from '@tanstack/react-query';
 import { api } from './client';
-import type { ApprovalRoute, Channel, FileItem, Member, Message, UserCard } from './types';
+import type { ApprovalRoute, Channel, FileItem, Member, Message, Poll, UserCard } from './types';
 
 export const keys = {
   channels: ['channels'] as const,
@@ -14,6 +14,8 @@ export const keys = {
   verification: (fileId: string) => ['verification', fileId] as const,
   file: (fileId: string) => ['file', fileId] as const,
   certificates: ['certificates'] as const,
+  poll: (pollId: string) => ['poll', pollId] as const,
+  acks: (messageId: string) => ['acks', messageId] as const,
 };
 
 export const useChannels = () => useQuery({ queryKey: keys.channels, queryFn: () => api<Channel[]>('/me/channels'), staleTime: 30_000 });
@@ -130,3 +132,5 @@ export function markDeleted(qc: QueryClient, channelId: string, id: string) {
     );
   }
 }
+
+export const usePoll = (pollId: string) => useQuery({ queryKey: keys.poll(pollId), queryFn: () => api<Poll>(`/polls/${pollId}`), staleTime: 15_000 });

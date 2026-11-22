@@ -8,6 +8,9 @@ import type { Channel, Message } from '../../api/types';
 import { Avatar, Badge, Button, cx, EmptyState, InlineError, Skeleton, formatTime } from '../../components/ui';
 import { pick } from '../../i18n';
 import { useMe } from '../../session/session';
+import { PollCard } from '../polls/PollCard';
+import { DirectiveBar } from './Directive';
+import { MessageBody } from './MessageBody';
 import { useDecrypted } from './useDecrypted';
 
 function dayLabel(iso: string, lang: string, t: (k: string) => string) {
@@ -47,6 +50,11 @@ export function Bubble({ m, channel, onOpenThread, showAuthor }: { m: Message; c
               {t('message.priority')}
             </Badge>
           )}
+          {m.requiresAck && !m.deleted && (
+            <Badge tone={mine ? 'neutral' : 'navy'} className="mb-1">
+              {t('directive.badge')}
+            </Badge>
+          )}
           {m.deleted ? (
             <span className="flex items-center gap-1 text-muted">
               <Trash size={14} aria-hidden="true" />
@@ -57,10 +65,12 @@ export function Bubble({ m, channel, onOpenThread, showAuthor }: { m: Message; c
               <WarningCircle size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
               {t('message.undecryptable')}
             </span>
+          ) : m.pollId ? (
+            <PollCard pollId={m.pollId} channel={channel} />
           ) : plain.text === null ? (
             <Skeleton className="h-4 w-40" />
           ) : (
-            <p className="break-words whitespace-pre-wrap">{plain.text}</p>
+            <MessageBody text={plain.text} />
           )}
           <span className={cx('mt-1 flex items-center justify-end gap-1 caption-5', mine ? 'text-on-bubble-out/70' : 'text-muted')}>
             {plain.encrypted && <Lock size={12} aria-label={t('message.encrypted')} />}
@@ -69,6 +79,7 @@ export function Bubble({ m, channel, onOpenThread, showAuthor }: { m: Message; c
             <time dateTime={m.createdAt}>{formatTime(m.createdAt, i18n.language)}</time>
           </span>
         </div>
+        {m.requiresAck && !m.deleted && <DirectiveBar m={m} channel={channel} mine={mine} />}
         <div className="flex items-center gap-2 px-1">
           {onOpenThread && !m.threadRootId && !m.deleted && (
             <button

@@ -51,6 +51,9 @@
   --pulse-focus: var(--puet-terracotta-accent);
   --pulse-viewer-backdrop: var(--puet-obsidian-dark);
   color-scheme: light;
+  /* Code blocks stay dark in both themes (readable syntax colours). */
+  --pulse-code: #121619;
+  --pulse-code-ink: #e6edf3;
 }
 
 [data-theme='dark'] {
@@ -72,6 +75,8 @@
   --pulse-success: #3fae78;
   --pulse-danger: #f2766b;
   color-scheme: dark;
+  --pulse-code: #0d1114;
+  --pulse-code-ink: #e6edf3;
 }
 
 @theme inline {
@@ -99,6 +104,8 @@
   --color-bubble-in: var(--pulse-bubble-in);
   --color-bubble-out: var(--pulse-bubble-out);
   --color-on-bubble-out: var(--pulse-on-bubble-out);
+  --color-code: var(--pulse-code);
+  --color-code-ink: var(--pulse-code-ink);
   --color-success: var(--pulse-success);
   --color-danger: var(--pulse-danger);
   --color-viewer: var(--pulse-viewer-backdrop);
@@ -194,3 +201,26 @@
     transition-duration: 1ms !important;
   }
 }
+
+/* Syntax colours for code blocks (lowlight / highlight.js class names). */
+.pulse-code .hljs-comment,
+.pulse-code .hljs-quote { color: #8b98a5; }
+.pulse-code .hljs-keyword,
+.pulse-code .hljs-selector-tag,
+.pulse-code .hljs-built_in,
+.pulse-code .hljs-type { color: #ff8a6b; }
+.pulse-code .hljs-string,
+.pulse-code .hljs-regexp,
+.pulse-code .hljs-addition { color: #7ed3a6; }
+.pulse-code .hljs-number,
+.pulse-code .hljs-literal,
+.pulse-code .hljs-symbol { color: #f2c46d; }
+.pulse-code .hljs-title,
+.pulse-code .hljs-function,
+.pulse-code .hljs-section { color: #8fc3ff; }
+.pulse-code .hljs-attr,
+.pulse-code .hljs-attribute,
+.pulse-code .hljs-variable,
+.pulse-code .hljs-params { color: #c9b6ff; }
+.pulse-code .hljs-meta,
+.pulse-code .hljs-deletion { color: #ff9f9f; }

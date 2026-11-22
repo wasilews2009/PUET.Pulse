@@ -44,6 +44,8 @@ export function useRealtime() {
       void qc.invalidateQueries({ queryKey: keys.approvals });
       void qc.invalidateQueries({ queryKey: keys.routes(e.fileId) });
     };
+    const onPoll = (e: { pollId: string }) => void qc.invalidateQueries({ queryKey: keys.poll(e.pollId) });
+    const onAck = (e: { messageId: string }) => void qc.invalidateQueries({ queryKey: keys.acks(e.messageId) });
     const onTyping = (e: { channelId: string; userId: string }) => typingStore.start(e.channelId, e.userId);
     const onNotification = (e: { channelId: string; silent: boolean; priority: boolean }) => {
       if (e.silent || document.visibilityState === 'visible') return;
@@ -69,6 +71,8 @@ export function useRealtime() {
     s.on('file.signed', onSigned);
     s.on('approval.requested', onApproval);
     s.on('approval.updated', onApproval);
+    s.on('poll.updated', onPoll);
+    s.on('message.ack', onAck);
     s.on('typing', onTyping);
     s.on('notification', onNotification);
     s.on('e2ee.to_device', onE2ee);
@@ -78,6 +82,8 @@ export function useRealtime() {
       s.off('disconnect', onDisconnect);
       s.off('connect_error', onDisconnect);
       s.off('message.new', onMessage);
+      s.off('poll.updated', onPoll);
+      s.off('message.ack', onAck);
       s.off('message.updated', onUpdated);
       s.off('message.deleted', onDeleted);
       for (const ev of ['channel.joined', 'channel.left', 'channel.updated', 'channel.read']) s.off(ev, refreshChannels);

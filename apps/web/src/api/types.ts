@@ -67,11 +67,48 @@ export interface Message {
   body: string | null;
   ciphertext: string | null;
   isPriority: boolean;
+  /** Directive: members confirm «Ознайомлений». */
+  requiresAck?: boolean;
+  /** Set in history for directives: when the current user confirmed, or null. */
+  acknowledgedAt?: string | null;
+  pollId?: string | null;
   createdAt: string;
   editedAt: string | null;
   expiresAt: string | null;
   deleted: boolean;
   replyCount?: number;
+}
+
+export interface Poll {
+  id: string;
+  channelId: string;
+  messageId: string;
+  createdById: string;
+  question: string;
+  /** Labels; formal votes use FOR / AGAINST / ABSTAIN codes. */
+  options: string[];
+  mode: 'OPEN' | 'SECRET';
+  multipleChoice: boolean;
+  formal: boolean;
+  quorum: number | null;
+  eligibleCount: number;
+  status: 'OPEN' | 'CLOSED';
+  closesAt: string | null;
+  closedAt: string | null;
+  createdAt: string;
+  participants: number;
+  counts: number[] | null;
+  voters: string[][] | null;
+  me: { voted: boolean; eligible: boolean; options: number[] | null };
+  quorumReached: boolean | null;
+  adopted: boolean | null;
+}
+
+export interface AckStats {
+  messageId: string;
+  total: number;
+  acknowledged: { userId: string; at: string }[];
+  pending: string[];
 }
 
 export type Presence = 'ONLINE' | 'IN_CLASS' | 'IN_COUNCIL' | 'ON_BUSINESS_TRIP' | 'DO_NOT_DISTURB' | 'OFFLINE';

@@ -99,6 +99,7 @@ apps/
                        signatures, verification protocol + QR
     src/approvals/     multi-step approval routes
     src/directory/     profile cards, directory search (canSeeInDirectory per row)
+    src/polls/         polls, formal votes of collegial bodies, vote protocol PDF
     scripts/init-ca.ts one-time creation of the internal CA (keys outside the repo)
   web/                 React 19 + Vite PWA client (served next to the API, /api prefix)
     src/api/           fetch client, DTO types, React Query hooks, batched cards
@@ -268,6 +269,32 @@ the same rules. Evaluation order, first deny wins, default deny:
 - Directory cards never include phones or email; the phone has its own endpoint
   (self and HR only). Hidden people are simply missing from card batches.
 
+**Polls, votes and directives (Phase 6)**
+
+- Polls live in E2EE-`DISABLED` channels only (the server stores the question and
+  choices). In governance, announcement and emergency channels only moderators
+  open them (`poll.create`); every member who is not read-only votes
+  (`vote.cast`); the author or a moderator closes early (`poll.manage`).
+- Formal votes (`formal`) are for `GOVERNANCE` channels: answers FOR / AGAINST /
+  ABSTAIN, the eligible list is frozen when the vote opens (`poll_eligible`),
+  quorum defaults to more than half, the result is frozen at close and a PDF
+  protocol with a SHA-256 of the result is issued for the Academic Secretary.
+- `SECRET` mode writes only anonymous per-option counters (`poll_tallies`), never
+  a ballot linked to a voter; results of a secret formal vote stay hidden until
+  it closes. This is server-side anonymity: a database administrator with access
+  to WAL or dead tuples could still correlate the last vote. A cryptographic
+  ballot needs an audited library and is future work.
+- DB guardrails: votes only while open and before `closes_at`, one per person
+  (primary key), tallies grow by exactly one, closed polls and poll definitions
+  are immutable, votes / eligibility / acknowledgements are append-only. The
+  audit log records participation in formal votes, never the choice.
+- Directives (`messages.requires_ack`) may be issued only by those allowed
+  `channel.moderate`; members confirm once (`message.ack`); only the author and
+  moderators see who has and has not confirmed.
+- Message formatting (code blocks, LaTeX) is rendered on the client only:
+  lowlight's tree is rebuilt as React spans, KaTeX runs with `trust: false` and
+  builds DOM nodes. Both load lazily.
+
 ## 5. Organizational topology and data model
 
 - **Tenants:** `PUET_MAIN`, `PUET_LYCEUM` (strict minor protection),
@@ -351,6 +378,18 @@ section apply only to marketing pages, not to the messenger app.
   approvals, verification page, settings, visual admin panel), directory API,
   plus security tests (IDOR, minor isolation, signature tampering, XSS, CSS
   injection, open redirect).
+- **Phase 6 (done):** formal votes of collegial bodies (secret / open, quorum,
+  protocol PDF), polls in channels, directives with acknowledgement, code
+  highlighting and LaTeX in messages.
+- **Phase 7:** WebRTC consultations (LiveKit) with screen sharing, lecturers'
+  consultation schedule.
+- **Phase 8:** corporate bots over REST / webhooks: ЄДЕБО / Деканат, Розклад ПУЕТ,
+  Service desk АГР та ІТ (dormitory repair tickets), ЕДО та Канцелярія, admissions
+  AI consultant (RAG over the admission rules).
+- **Phase 9:** viewer thumbnails, bookmarks and full-text search, IP in the
+  watermark, PAdES with a visual QR stamp, anonymous intake for trust services,
+  content filters for minors, no forwarding of files outside, desktop wrapper,
+  polls and attachments in encrypted rooms.
 
 Do one phase at a time and stop for the owner's confirmation between phases.
 

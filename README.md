@@ -8,7 +8,7 @@ On-premise, zero-trust, multi-tenant.
 
 > Правила архітектури та безпеки: [CLAUDE.md](CLAUDE.md).
 
-## Стан: Фази 1–5 виконано
+## Стан: Фази 1–6 виконано
 
 | Що | Де |
 |---|---|
@@ -40,6 +40,9 @@ On-premise, zero-trust, multi-tenant.
 | Візуальна адмін-панель: структура, ролі, матриця, політики, симулятор, журнал аудиту | `apps/web/src/features/admin` |
 | Довідник і картки людей з фільтром видимості для кожного рядка | `apps/api/src/directory` |
 | Приклад nginx: TLS 1.3, HSTS, суворий CSP, проксі `/api` і `/api/ws` | `infra/nginx/pulse.conf` |
+| **Фаза 6.** Голосування Вченої ради, Ректорату, НМР: таємне й відкрите, кворум, протокол PDF для Вченого секретаря | `apps/api/src/polls` |
+| Опитування в каналах, директиви з підтвердженням «Ознайомлений» | `apps/api/src/polls`, `apps/api/src/messaging` |
+| Код із підсвіткою синтаксису та формули LaTeX у повідомленнях | `apps/web/src/features/chat` |
 
 ## Швидкий старт
 
@@ -64,7 +67,8 @@ pnpm --filter @puet/web dev   # веб-клієнт на http://localhost:5173 (
 Нові змінні Фази 3:
 `E2EE_SERVER_NAME`, `JOBS_ENABLED`; Фази 4: `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`,
 `FILE_MAX_MB`, `PKI_CA_*`, `PKI_PUBLIC_URL`, `VERIFY_CODE_SECRET`, `QES_GATEWAY_*`
-(див. `.env.example`). Після оновлення запустіть `pnpm db:deploy && pnpm db:seed`.
+(див. `.env.example`). Після оновлення запустіть `pnpm db:deploy && pnpm db:seed` (Фаза 6 додає нові
+дозволи `poll.create`, `poll.manage`, `message.ack`).
 
 Внутрішній ЦСК створюється один раз, ключі зберігаються поза репозиторієм:
 

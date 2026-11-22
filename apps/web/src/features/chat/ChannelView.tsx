@@ -127,7 +127,11 @@ export function ChannelView({ channel }: { channel: Channel }) {
           <div className="flex min-w-0 flex-1 flex-col">
             <h2 className="flex items-center gap-2 truncate heading-6">
               <span className="truncate">{name}</span>
-              {channel.isOfficial && <Badge tone="navy">{t('channel.official')}</Badge>}
+              {channel.isOfficial && (
+                <Badge tone="navy" className="hidden sm:inline-flex">
+                  {t('channel.official')}
+                </Badge>
+              )}
             </h2>
             <p className="flex items-center gap-2 truncate caption-5 text-muted">
               {channel.type === 'DIRECT' && peer.data ? t(`presence.${peer.data.presence}`) : t(`channelTypes.${channel.type}`)}
