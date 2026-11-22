@@ -51,6 +51,14 @@ export function useRealtime() {
       if (e.slotId) void qc.invalidateQueries({ queryKey: keys.consultations });
     };
     const onConsultation = () => void qc.invalidateQueries({ queryKey: keys.consultations });
+    const onBot = (e: { bot: string }) => {
+      void qc.invalidateQueries({ queryKey: keys.bots, exact: true });
+      if (!/^[a-z-]{3,20}$/.test(e.bot)) return;
+      void qc.invalidateQueries({ queryKey: ['bots', 'messages', e.bot] });
+      if (e.bot === 'deanery') void qc.invalidateQueries({ queryKey: ['bots', 'deanery'] });
+      if (e.bot === 'schedule') void qc.invalidateQueries({ queryKey: keys.schedule });
+      if (e.bot === 'service-desk') void qc.invalidateQueries({ queryKey: ['bots', 'tickets'] });
+    };
     const onTyping = (e: { channelId: string; userId: string }) => typingStore.start(e.channelId, e.userId);
     const onNotification = (e: { channelId: string; silent: boolean; priority: boolean }) => {
       if (e.silent || document.visibilityState === 'visible') return;
@@ -80,6 +88,7 @@ export function useRealtime() {
     s.on('message.ack', onAck);
     s.on('call.updated', onCall);
     s.on('consultation.updated', onConsultation);
+    s.on('bot.message', onBot);
     s.on('typing', onTyping);
     s.on('notification', onNotification);
     s.on('e2ee.to_device', onE2ee);
@@ -102,6 +111,7 @@ export function useRealtime() {
       s.off('file.signed', onSigned);
       s.off('approval.requested', onApproval);
       s.off('approval.updated', onApproval);
+      s.off('bot.message', onBot);
       s.off('typing', onTyping);
       s.off('notification', onNotification);
       s.off('e2ee.to_device', onE2ee);

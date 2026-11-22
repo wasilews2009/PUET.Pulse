@@ -45,6 +45,10 @@ On-premise, zero-trust, multi-tenant.
 | Код із підсвіткою синтаксису та формули LaTeX у повідомленнях | `apps/web/src/features/chat` |
 | **Фаза 7.** Відеодзвінки й консультації на LiveKit (WebRTC) з демонстрацією екрана, у каналах і особистих чатах | `apps/api/src/calls`, `apps/web/src/features/calls` |
 | Графік консультацій викладачів: слоти (онлайн / в аудиторії), повторення, запис студентів з темою, скасування | `apps/api/src/consultations`, `apps/web/src/features/consultations` |
+| **Фаза 8.** Корпоративні боти (сторінка «Сервіси»): особиста скринька кожного бота, REST і підписані вебхуки | `apps/api/src/bots`, `apps/web/src/features/bots` |
+| «ЄДЕБО / Деканат» (замовлення довідок, статус ІНП), «Розклад ПУЕТ» (зміни аудиторій, посилання Moodle / Zoom) | `apps/api/src/bots` |
+| «Сервіс-деск АГР та ІТ» (заявки, черга служби, гуртожитки через коменданта), «ЕДО та Канцелярія» (погодження, реєстрація наказів) | `apps/api/src/bots` |
+| AI-консультант приймальної комісії: пошук по чинних правилах прийому, цитати або (за бажанням) відповідь Claude | `apps/api/src/bots/admissions` |
 
 ## Швидкий старт
 
@@ -70,9 +74,12 @@ pnpm --filter @puet/web dev   # веб-клієнт на http://localhost:5173 (
 `E2EE_SERVER_NAME`, `JOBS_ENABLED`; Фази 4: `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`,
 `FILE_MAX_MB`, `PKI_CA_*`, `PKI_PUBLIC_URL`, `VERIFY_CODE_SECRET`, `QES_GATEWAY_*`;
 Фази 7: `LIVEKIT_URL`, `LIVEKIT_PUBLIC_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`
-(порожній `LIVEKIT_URL` вимикає дзвінки; вебхук LiveKit налаштуйте на `https://<хост>/api/calls/livekit/webhook`)
+(порожній `LIVEKIT_URL` вимикає дзвінки; вебхук LiveKit налаштуйте на `https://<хост>/api/calls/livekit/webhook`);
+Фази 8: `OUTBOX_DEANERY_*`, `OUTBOX_EDO_*`, `SCHEDULE_LINK_HOSTS`, `ADMISSIONS_*`, `ANTHROPIC_API_KEY`
+(вебхуки `POST /api/integrations/deanery`, `/schedule`, `/edo` з типами клієнтів `DEANERY`, `SCHEDULE`, `EDO`)
 (див. `.env.example`). Після оновлення запустіть `pnpm db:deploy && pnpm db:seed` (Фаза 6 додає нові
-дозволи `poll.create`, `poll.manage`, `message.ack`; Фаза 7: `call.*`, `consultation.*`).
+дозволи `poll.create`, `poll.manage`, `message.ack`; Фаза 7: `call.*`, `consultation.*`; Фаза 8: `bot.use`, `deanery.use`, `schedule.read`,
+`ticket.*`, `admissions.kb.manage`).
 
 Внутрішній ЦСК створюється один раз, ключі зберігаються поза репозиторієм:
 

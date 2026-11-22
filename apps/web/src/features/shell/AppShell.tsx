@@ -1,9 +1,9 @@
-import { CalendarCheck, ChatsCircle, GearSix, Moon, ShieldStar, SignOut, Sun, Stamp } from '@phosphor-icons/react';
+import { CalendarCheck, ChatsCircle, GearSix, Moon, ShieldStar, SignOut, SquaresFour, Sun, Stamp } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NavLink, Outlet } from 'react-router';
-import { useApprovals, useChannels } from '../../api/queries';
+import { useApprovals, useBots, useChannels } from '../../api/queries';
 import { cx, IconButton } from '../../components/ui';
 import { pick } from '../../i18n';
 import { isAdmin, logout, useMe } from '../../session/session';
@@ -42,10 +42,10 @@ function TabLink({ to, label, icon, badge }: { to: string; label: string; icon: 
   return (
     <NavLink
       to={to}
-      className={({ isActive }) => cx('relative flex flex-1 flex-col items-center gap-0.5 py-2 caption-4', isActive ? 'text-primary' : 'text-muted')}
+      className={({ isActive }) => cx('relative flex min-w-0 flex-1 flex-col items-center gap-0.5 py-2 caption-4', isActive ? 'text-primary' : 'text-muted')}
     >
       {icon}
-      {label}
+      <span className="max-w-full truncate px-0.5">{label}</span>
       {badge ? <span className="absolute top-1 left-1/2 ml-2 min-w-4 rounded-full bg-accent px-1 text-center text-[10px] leading-4 font-semibold text-on-accent">{badge > 99 ? '99+' : badge}</span> : null}
     </NavLink>
   );
@@ -62,6 +62,8 @@ export function AppShell() {
   const { connected } = useRealtime();
   const unread = (channels.data ?? []).filter((c) => !c.mutedUntil).reduce((n, c) => n + c.unread, 0);
   const pendingApprovals = approvals.data?.length ?? 0;
+  const bots = useBots();
+  const botUnread = (bots.data ?? []).reduce((n, b) => n + b.unread, 0);
   const admin = isAdmin(me);
   const name = pick(i18n.language, me.fullNameUk, me.fullNameEn);
 
@@ -75,6 +77,7 @@ export function AppShell() {
         <img src="/logo-puet-mark.svg" alt="PUET" className="mb-4 size-11" />
         <RailLink to="/chats" label={t('nav.chats')} icon={<ChatsCircle size={26} />} badge={unread} />
         <RailLink to="/consultations" label={t('nav.consultations')} icon={<CalendarCheck size={26} />} />
+        <RailLink to="/services" label={t('nav.services')} icon={<SquaresFour size={26} />} badge={botUnread} />
         <RailLink to="/approvals" label={t('nav.approvals')} icon={<Stamp size={26} />} badge={pendingApprovals} />
         {admin && <RailLink to="/admin" label={t('nav.admin')} icon={<ShieldStar size={26} />} />}
         <RailLink to="/settings" label={t('nav.settings')} icon={<GearSix size={26} />} />
@@ -101,9 +104,10 @@ export function AppShell() {
       <nav aria-label="PUET.Pulse" className="flex shrink-0 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] md:hidden">
         <TabLink to="/chats" label={t('nav.chats')} icon={<ChatsCircle size={24} />} badge={unread} />
         <TabLink to="/consultations" label={t('nav.consultationsShort')} icon={<CalendarCheck size={24} />} />
+        <TabLink to="/services" label={t('nav.services')} icon={<SquaresFour size={24} />} badge={botUnread} />
         <TabLink to="/approvals" label={t('nav.approvals')} icon={<Stamp size={24} />} badge={pendingApprovals} />
         {admin && <TabLink to="/admin" label={t('nav.adminShort')} icon={<ShieldStar size={24} />} />}
-        <TabLink to="/settings" label={t('nav.settings')} icon={<GearSix size={24} />} />
+        <TabLink to="/settings" label={t('nav.settingsShort')} icon={<GearSix size={24} />} />
       </nav>
     </div>
     </CallProvider>

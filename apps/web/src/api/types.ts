@@ -375,3 +375,107 @@ export interface AuditEntry {
   reason: string | null;
   ip: string | null;
 }
+
+// ── Phase 8: corporate bots ──
+
+export type BotSlug = 'deanery' | 'schedule' | 'service-desk' | 'chancellery' | 'admissions';
+
+export interface BotSummary {
+  bot: BotSlug;
+  unread: number;
+  lastAt: string | null;
+}
+
+export type BotCard =
+  | { kind: 'document_request'; requestId: string; type: string; status: string; note?: string | null }
+  | { kind: 'study_plan'; semester: string; status: string; credits: number | null; note?: string | null }
+  | {
+      kind: 'schedule_change';
+      changeId: string;
+      change: string;
+      date: string;
+      pair: number;
+      discipline: string | null;
+      group: string | null;
+      room: string | null;
+      newDate: string | null;
+      newPair: number | null;
+      link: string | null;
+      note: string | null;
+    }
+  | { kind: 'ticket'; ticketId: string; number: number; title: string; status: string; event: string }
+  | {
+      kind: 'approval';
+      routeId: string;
+      fileId: string;
+      title: string;
+      status: string;
+      event: 'your_turn' | 'approved' | 'rejected' | 'registered';
+      registrationNo?: string | null;
+    }
+  | { kind: 'answer'; mode: 'extractive' | 'llm' | 'none'; sources: { ordinal: number; heading: string | null }[] };
+
+export type ScheduleChange = Extract<BotCard, { kind: 'schedule_change' }>;
+
+export interface BotMessage {
+  id: string;
+  bot: BotSlug;
+  direction: 'USER' | 'BOT';
+  body: string | null;
+  card: BotCard | null;
+  createdAt: string;
+  read: boolean;
+}
+
+export interface DocumentRequest {
+  id: string;
+  type: string;
+  copies: number;
+  purpose: string | null;
+  status: string;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StudyPlan {
+  semester: string;
+  isCurrent: boolean;
+  status: string;
+  credits: number | null;
+  note: string | null;
+  updatedAt: string;
+}
+
+export type TicketStatus = 'NEW' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED' | 'REJECTED';
+
+export interface Ticket {
+  id: string;
+  number: number;
+  requesterId: string;
+  requesterName: string | null;
+  category: 'IT' | 'FACILITIES' | 'DORMITORY';
+  priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
+  title: string;
+  description: string;
+  location: string | null;
+  unit: { nameUk: string; nameEn: string | null } | null;
+  dormitory: number | null;
+  room: string | null;
+  status: TicketStatus;
+  assigneeName: string | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+  closedAt: string | null;
+  events?: { id: string; kind: string; status: string | null; comment: string | null; createdAt: string; byRequester: boolean; actorName: string | null }[];
+}
+
+export interface AdmissionsDoc {
+  id: string;
+  title: string;
+  sha256: string;
+  active: boolean;
+  chunks: number;
+  createdAt: string;
+}

@@ -1,6 +1,25 @@
 import { useInfiniteQuery, useQuery, type QueryClient } from '@tanstack/react-query';
-import { api } from './client';
-import type { ApprovalRoute, Call, Channel, ConsultationHost, FileItem, Member, Message, Poll, Slot, UserCard } from './types';
+import { api, ApiError } from './client';
+import type {
+  AdmissionsDoc,
+  ApprovalRoute,
+  BotMessage,
+  BotSlug,
+  BotSummary,
+  Call,
+  Channel,
+  ConsultationHost,
+  DocumentRequest,
+  FileItem,
+  Member,
+  Message,
+  Poll,
+  ScheduleChange,
+  Slot,
+  StudyPlan,
+  Ticket,
+  UserCard,
+} from './types';
 
 export const keys = {
   channels: ['channels'] as const,
@@ -23,6 +42,16 @@ export const keys = {
   hostSlots: (userId: string) => ['consultations', 'host', userId] as const,
   hosts: ['consultations', 'hosts'] as const,
   myCourses: ['consultations', 'courses'] as const,
+  /** Every bot query lives under this prefix. */
+  bots: ['bots'] as const,
+  botMessages: (bot: BotSlug) => ['bots', 'messages', bot] as const,
+  docRequests: ['bots', 'deanery', 'requests'] as const,
+  studyPlan: ['bots', 'deanery', 'plan'] as const,
+  schedule: ['bots', 'schedule'] as const,
+  myTickets: ['bots', 'tickets', 'mine'] as const,
+  ticketQueue: (status: 'open' | 'closed') => ['bots', 'tickets', 'queue', status] as const,
+  ticket: (id: string) => ['bots', 'tickets', id] as const,
+  admissionsKb: ['bots', 'admissions', 'kb'] as const,
 };
 
 export const useChannels = () => useQuery({ queryKey: keys.channels, queryFn: () => api<Channel[]>('/me/channels'), staleTime: 30_000 });
@@ -154,3 +183,29 @@ export const useConsultationHosts = () => useQuery({ queryKey: keys.hosts, query
 
 export const useMyCourses = (enabled: boolean) =>
   useQuery({ queryKey: keys.myCourses, queryFn: () => api<{ id: string; nameUk: string; nameEn: string }[]>('/consultations/courses'), enabled, staleTime: 300_000 });
+
+export const useBots = () => useQuery({ queryKey: keys.bots, queryFn: () => api<BotSummary[]>('/bots'), staleTime: 30_000 });
+
+export const useBotMessages = (bot: BotSlug) =>
+  useQuery({ queryKey: keys.botMessages(bot), queryFn: () => api<BotMessage[]>(`/bots/${bot}/messages`), staleTime: 15_000 });
+
+export const useDocRequests = () => useQuery({ queryKey: keys.docRequests, queryFn: () => api<DocumentRequest[]>('/deanery/requests') });
+export const useStudyPlan = () => useQuery({ queryKey: keys.studyPlan, queryFn: () => api<StudyPlan[]>('/deanery/study-plan') });
+export const useScheduleChanges = () => useQuery({ queryKey: keys.schedule, queryFn: () => api<ScheduleChange[]>('/schedule/changes') });
+export const useMyTickets = () => useQuery({ queryKey: keys.myTickets, queryFn: () => api<Ticket[]>('/service-desk/tickets/mine') });
+export const useTicket = (id: string | null) =>
+  useQuery({ queryKey: keys.ticket(id ?? 'none'), queryFn: () => api<Ticket>(`/service-desk/tickets/${id}`), enabled: !!id });
+
+/** Queries that only some people may run: a 403 means "not for you" and hides the section. */
+const forbiddenIsNull = async <T,>(p: Promise<T>): Promise<T | null> => {
+  try {
+    return await p;
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 403) return null;
+    throw e;
+  }
+};
+export const useTicketQueue = (status: 'open' | 'closed') =>
+  useQuery({ queryKey: keys.ticketQueue(status), queryFn: () => forbiddenIsNull(api<Ticket[]>(`/service-desk/queue?status=${status}`)), retry: false });
+export const useAdmissionsKb = () =>
+  useQuery({ queryKey: keys.admissionsKb, queryFn: () => forbiddenIsNull(api<AdmissionsDoc[]>('/bots/admissions/kb')), retry: false, staleTime: 60_000 });

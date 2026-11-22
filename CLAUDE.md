@@ -102,6 +102,8 @@ apps/
     src/polls/         polls, formal votes of collegial bodies, vote protocol PDF
     src/calls/         LiveKit calls: join tokens, webhook, revalidation (MediaServer)
     src/consultations/ lecturers' consultation slots and bookings
+    src/bots/          corporate bots: inboxes, deanery, schedule, service desk,
+                       chancellery, signed outbox, admissions consultant (RAG)
     scripts/init-ca.ts one-time creation of the internal CA (keys outside the repo)
   web/                 React 19 + Vite PWA client (served next to the API, /api prefix)
     src/api/           fetch client, DTO types, React Query hooks, batched cards
@@ -319,6 +321,40 @@ the same rules. Evaluation order, first deny wins, default deny:
   the host. The room opens 10 minutes before the slot and closes 15 minutes after.
 - Realtime events `call.updated` and `consultation.updated` carry ids only.
 
+**Corporate bots (Phase 8)**
+
+- Bots are server-side services, not user accounts: each person has a private
+  inbox per bot (`bot_messages`) with structured cards rendered as text. Who may
+  use which bot is decided by the policy engine (`bot.use` on a `bot` resource:
+  deanery for students, chancellery for staff, admissions for everyone). Bot
+  routes take a closed slug (`idPattern`), never a free-form id.
+- University systems talk to the bots only through signed webhooks
+  (`integrations/deanery`, `/schedule`, `/edo`, kinds `DEANERY`, `SCHEDULE`,
+  `EDO`) and the signed outbox (`integration_outbox`, same HMAC scheme,
+  Idempotency-Key = event id, retries with backoff, 20 attempts). Outbound
+  payloads carry ids (ЄДЕБО id, request id, file SHA-256), never names.
+- Certificate requests: one open request per type and student; the life cycle
+  (REQUESTED → IN_PROGRESS / READY → ISSUED, or REJECTED / CANCELLED) is a DB
+  trigger. Only the student cancels, and only while REQUESTED.
+- Schedule links must be https to an allowlisted host (`SCHEDULE_LINK_HOSTS`);
+  schedule changes are append-only and announced once per `externalId` to the
+  current students and lecturers of the group / course.
+- Service desk: tickets go to the IT center, АГР (and its sub-units) or the
+  commandant of the requester's dormitory; the room comes from the profile and
+  is shown only to the resident and that commandant. Handlers are decided by
+  the resolver (`isHandler`) and the engine; core ticket fields are immutable,
+  the life cycle and the events log are enforced in the DB.
+- ЕДО: approvers are told when it is their turn; an approved route is sent to the
+  ЕДО with the served SHA-256; the registration number is set once (trigger).
+- Admissions consultant: PostgreSQL full-text search over the active version of
+  the rules (one active document per tenant), queries built from letters and
+  digits only. Default answers quote the rules (nothing leaves the server). The
+  Claude adapter is opt-in (`ADMISSIONS_ANSWERS=anthropic`), sends only the
+  question and excerpts, and falls back to quoting on refusal, error or an
+  answer without citations. Rate limit per person per hour; questions and
+  answers expire after 30 days and are purged. Only staff of the Admissions
+  Office upload or activate the rules (`admissions.kb.manage`).
+
 ## 5. Organizational topology and data model
 
 - **Tenants:** `PUET_MAIN`, `PUET_LYCEUM` (strict minor protection),
@@ -407,7 +443,7 @@ section apply only to marketing pages, not to the messenger app.
   highlighting and LaTeX in messages.
 - **Phase 7 (done):** WebRTC calls and consultations (LiveKit) with screen
   sharing, lecturers' consultation schedule with booking.
-- **Phase 8:** corporate bots over REST / webhooks: ЄДЕБО / Деканат, Розклад ПУЕТ,
+- **Phase 8 (done):** corporate bots over REST / webhooks: ЄДЕБО / Деканат, Розклад ПУЕТ,
   Service desk АГР та ІТ (dormitory repair tickets), ЕДО та Канцелярія, admissions
   AI consultant (RAG over the admission rules).
 - **Phase 9:** viewer thumbnails, bookmarks and full-text search, IP in the
