@@ -1,8 +1,9 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { Prisma } from '@puet/database';
 import type { Principal, Resource } from '@puet/policy-engine';
-import { Action, ChannelType, E2eeMode, MemberRole, ResourceType } from '@puet/shared';
+import { Action, ChannelType, E2eeMode, MemberRole, minorContentFlags, PrincipalKind, ResourceType } from '@puet/shared';
 import { AuditService } from '../audit/audit.service';
+import { APP_CONFIG, type AppConfig } from '../config/config';
 import { UserTargetResolver } from '../authz/prisma-resolvers';
 import { NotificationService } from '../notifications/notification.service';
 import { PolicyService } from '../policy/policy.service';
@@ -100,7 +101,35 @@ export class MessagingService {
     @Inject(PolicyService) private readonly policy: PolicyService,
     @Inject(UserTargetResolver) private readonly users: UserTargetResolver,
     @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
+
+  /**
+   * Content filter for minors (Phase 9): plaintext that a minor writes, or that
+   * reaches a channel with a minor in it, must pass `minorContentFlags`. Staff may
+   * post links (study materials); obscene words are refused for everybody.
+   * End-to-end encrypted text is filtered on the minor's own device instead.
+   */
+  private async checkMinorContent(principal: Principal, channelId: string, tenantId: string, text: string) {
+    const audience =
+      principal.isMinor ||
+      (await this.prisma.channelMember.count({ where: { channelId, user: { isMinor: true, status: 'ACTIVE' } } })) > 0;
+    if (!audience) return;
+    const flags = minorContentFlags(text, { allowedLinkHosts: this.config.minorLinkHosts, allowLinks: principal.kind === PrincipalKind.STAFF });
+    if (flags.length === 0) return;
+    // The audit names the rule, never the text.
+    await this.audit.record({
+      actorId: principal.userId,
+      tenantId,
+      action: 'message.send',
+      resourceType: 'channel',
+      resourceId: channelId,
+      outcome: 'DENIED',
+      reason: 'content.minor_filter',
+      metadata: { flags },
+    });
+    throw new UnprocessableEntityException({ message: 'The message did not pass the content filter for minors', flags });
+  }
 
   // ───────────────────────────── Reading ─────────────────────────────
 
@@ -127,6 +156,7 @@ export class MessagingService {
             archivedAt: true,
             directKey: true,
             anonymousCase: { select: { alias: true } },
+            orgUnit: { select: { forbidExternalForward: true } },
           },
         },
       },
@@ -158,6 +188,8 @@ export class MessagingService {
       peerId: c.directKey ? (c.directKey.split(':').find((id) => id !== principal.userId) ?? null) : null,
       /** Trust rooms of anonymous appeals: the case alias (officers close the appeal). */
       appealAlias: c.anonymousCase?.alias ?? null,
+      /** Files of this channel may be forwarded only to channels of the same unit. */
+      forwardRestricted: c.orgUnit?.forbidExternalForward ?? false,
       role,
       lastReadAt: lastReadAt?.toISOString() ?? null,
       mutedUntil: mutedUntil && mutedUntil > now ? mutedUntil.toISOString() : null,
@@ -211,6 +243,7 @@ export class MessagingService {
     if (!row) throw new NotFoundException();
 
     this.checkPayloadMode(row.e2eeMode, input);
+    if (input.body !== undefined) await this.checkMinorContent(principal, channelId, channel.tenantId, input.body);
     if (input.requiresAck) {
       // Directives are issued by those who moderate the channel (Rectorate, directors, commandants).
       if (input.threadRootId) throw new BadRequestException('A directive cannot be a thread reply');
@@ -307,6 +340,7 @@ export class MessagingService {
       throw new BadRequestException('Edit must use the same encryption as the original message');
     }
     if (input.senderDeviceId) await this.checkOwnDevice(principal, input.senderDeviceId);
+    if (input.body !== undefined) await this.checkMinorContent(principal, current.channelId, message.tenantId, input.body);
 
     const updated = await this.prisma.message.update({
       where: { id: message.id! },

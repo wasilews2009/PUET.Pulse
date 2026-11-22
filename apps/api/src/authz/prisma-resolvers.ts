@@ -26,6 +26,7 @@ const channelSelect = {
   dormitoryId: true,
   courseOfferingId: true,
   createdById: true,
+  orgUnit: { select: { forbidExternalForward: true } },
 } as const;
 
 type ChannelRow = {
@@ -40,6 +41,7 @@ type ChannelRow = {
   orgUnitId: string | null;
   dormitoryId: string | null;
   courseOfferingId: string | null;
+  orgUnit: { forbidExternalForward: boolean } | null;
 };
 
 const opt = <K extends string, V>(key: K, value: V | null | undefined) =>
@@ -137,6 +139,7 @@ export class ChannelScopedResolver implements ResourceResolver {
       archived: channel.archivedAt !== null,
       isMember: activeMember,
       ...(isApprover ? { isApprover: true } : {}),
+      ...(channel.orgUnit?.forbidExternalForward ? { forwardRestricted: true } : {}),
       ...(activeMember ? { memberRole: membership!.role as MemberRole } : {}),
       ...opt('ownerId', ownerId),
       ...opt('instituteId', channel.instituteId),

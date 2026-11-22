@@ -6,6 +6,7 @@ import type { AuthenticatedRequest } from '../auth/principal';
 import { Authorize } from '../authz/authorize.decorator';
 import { parse } from '../common/validation';
 import { AnnotationsService, annotationInput, annotationUpdate, bookmarkInput } from './annotations';
+import { FileForwardService, forwardInput } from './file-forward.service';
 import { FilesService, readRawBody, type ServedFile } from './files.service';
 
 const CHANNEL = { type: ResourceType.CHANNEL, idField: 'channelId' } as const;
@@ -67,7 +68,15 @@ export class FilesController {
   constructor(
     @Inject(FilesService) private readonly files: FilesService,
     @Inject(AnnotationsService) private readonly annotations: AnnotationsService,
+    @Inject(FileForwardService) private readonly forwarding: FileForwardService,
   ) {}
+
+  /** «Переслати»: copy a released file into another channel (the target is checked by the policy engine). */
+  @Post('files/:fileId/forward')
+  @Authorize(Action.FILE_DOWNLOAD, FILE)
+  forward(@Req() req: AuthenticatedRequest, @Body() body: unknown) {
+    return this.forwarding.forward(req.principal!, req.authz!.resource, parse(forwardInput, body));
+  }
 
   /**
    * Raw upload: body is the file (application/octet-stream), the UTF-8 name is

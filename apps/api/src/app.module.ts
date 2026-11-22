@@ -24,6 +24,7 @@ import { PollsController } from './polls/polls.controller';
 import { PollsService } from './polls/polls.service';
 import { AnnotationsService } from './files/annotations';
 import { FilesController } from './files/files.controller';
+import { FileForwardService } from './files/file-forward.service';
 import { FilesService } from './files/files.service';
 import { ClamdScanner, MALWARE_SCANNER } from './files/malware-scanner';
 import { OBJECT_STORE, S3ObjectStore } from './files/object-store';
@@ -129,6 +130,7 @@ export const REDIS = Symbol('REDIS');
     { provide: INTERNAL_SIGNATURE_PROVIDER, inject: [CA_LOADER], useFactory: (ca: CaLoader) => new InternalPkiProvider(ca) },
     { provide: EXTERNAL_SIGNATURE_PROVIDER, inject: [APP_CONFIG], useFactory: (cfg: AppConfig) => new ExternalQesAdapter(cfg.pki.qes) },
     FilesService,
+    FileForwardService,
     AnnotationsService,
     PkiService,
     SignaturesService,

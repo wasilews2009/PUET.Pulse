@@ -93,6 +93,20 @@ export interface Resource {
   dormitoryId?: string;
   courseOfferingId?: string;
   target?: TargetUserFacts;
+  /** Channels whose org unit forbids forwarding files outside it (Chancellery, HR, Finance, Legal). */
+  forwardRestricted?: boolean;
+  /** FILE_FORWARD, evaluated on the target channel: facts of the file being forwarded (computed server-side). */
+  forwardSource?: ForwardSource;
+}
+
+export interface ForwardSource {
+  tenantId: string;
+  /** Org unit of the source file's channel. */
+  orgUnitId?: string;
+  /** The source channel's unit forbids forwarding files outside it. */
+  restricted: boolean;
+  /** Confidential (view-only) files are never forwarded. */
+  confidential: boolean;
 }
 
 export interface Environment {

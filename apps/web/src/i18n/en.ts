@@ -486,6 +486,11 @@ export const en: Dictionary = {
     set: 'Status',
   },
   files: {
+    forward: 'Forward',
+    forwardTitle: 'Forward “{{name}}”',
+    forwardRestricted: 'Files of this channel can be forwarded only to channels of the same unit.',
+    forwardedTo: 'Forwarded to:',
+    forwardDenied: 'This file cannot be forwarded to the chosen chat.',
     title: 'Channel files',
     empty: 'No files yet',
     emptyHint: 'Attach a document in the message field. Every file is scanned for malware.',
@@ -506,6 +511,10 @@ export const en: Dictionary = {
     pages_few: '{{count}} pages',
     pages_many: '{{count}} pages',
     pages_other: '{{count}} pages',
+  },
+  safety: {
+    hidden: 'This message is hidden by the content filter.',
+    blocked: 'The message was not sent: it contains obscene words or links to outside websites.',
   },
   trust: {
     nav: 'Anonymous appeal',

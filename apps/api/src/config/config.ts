@@ -93,6 +93,8 @@ const schema = z.object({
   OUTBOX_EDO_URL: optional(z.string().url()),
   OUTBOX_EDO_SECRET: optional(z.string().min(32)),
   /** Hosts allowed in schedule links (Moodle / Zoom), comma separated; subdomains included. */
+  /** Extra link hosts minors may receive (puet.edu.ua and its subdomains are always allowed). */
+  MINOR_LINK_HOSTS: z.string().default(''),
   SCHEDULE_LINK_HOSTS: z.string().default('moodle.puet.edu.ua,zoom.us,meet.google.com,teams.microsoft.com'),
   /** Admissions consultant: "extractive" quotes the rules (nothing leaves the server); "anthropic" asks Claude. */
   ADMISSIONS_ANSWERS: z.enum(['extractive', 'anthropic']).default('extractive'),
@@ -138,6 +140,8 @@ export interface AppConfig {
   livekit: { url: string; publicUrl: string; apiKey: string; apiSecret: string } | null;
   /** Anonymous appeals to trust services are off unless the secret is set. */
   trustIntakeSecret?: string;
+  /** Extra hosts links to minors may point to (content filter, Phase 9). */
+  minorLinkHosts: string[];
   bots: {
     outbox: Partial<Record<'DEANERY' | 'EDO', { url: string; secret: string }>>;
     scheduleLinkHosts: string[];
@@ -213,6 +217,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       qes: e.QES_GATEWAY_URL && e.QES_GATEWAY_TOKEN ? { url: e.QES_GATEWAY_URL, token: e.QES_GATEWAY_TOKEN } : null,
     },
     ...(e.TRUST_INTAKE_SECRET ? { trustIntakeSecret: e.TRUST_INTAKE_SECRET } : {}),
+    minorLinkHosts: e.MINOR_LINK_HOSTS.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean),
     livekit:
       e.LIVEKIT_URL && e.LIVEKIT_API_KEY && e.LIVEKIT_API_SECRET
         ? {

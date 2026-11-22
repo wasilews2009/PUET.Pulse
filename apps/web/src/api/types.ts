@@ -53,6 +53,8 @@ export interface Channel {
   peerId: string | null;
   /** Set on the trust room of an anonymous appeal. */
   appealAlias?: string | null;
+  /** Files of this channel may be forwarded only within its unit (Chancellery, HR, Finance, Legal). */
+  forwardRestricted?: boolean;
   role: MemberRole;
   lastReadAt: string | null;
   mutedUntil: string | null;

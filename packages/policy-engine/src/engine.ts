@@ -59,6 +59,7 @@ const CHANNEL_READ_ACTIONS: ReadonlySet<string> = new Set([
 const CHANNEL_WRITE_ACTIONS: ReadonlySet<string> = new Set([
   Action.MESSAGE_SEND,
   Action.FILE_UPLOAD,
+  Action.FILE_FORWARD,
   Action.MESSAGE_EDIT,
 ]);
 
@@ -297,6 +298,8 @@ export class PolicyEngine {
     if (action === Action.TRUST_INTAKE && principal.kind !== PrincipalKind.STAFF && principal.kind !== PrincipalKind.STUDENT) {
       return deny('trust.intake_people_only');
     }
+    // A file is forwarded into a channel; the channel rules below decide.
+    if (action === Action.FILE_FORWARD && resource.type !== ResourceType.CHANNEL) return deny('resource.type_mismatch');
 
     // Own-account resources (settings, devices, key backup) belong to exactly one user.
     if (resource.type === ResourceType.SELF || resource.type === ResourceType.DEVICE) {
@@ -548,6 +551,16 @@ export class PolicyEngine {
       }
       if (action === Action.MESSAGE_EDIT && resource.ownerId !== principal.userId) {
         return deny('ownership.required');
+      }
+      if (action === Action.FILE_FORWARD) {
+        const src = resource.forwardSource;
+        if (resource.type !== ResourceType.CHANNEL || !src) return deny('file.forward_source');
+        if (src.confidential) return deny('dlp.view_only');
+        if (src.tenantId !== resource.tenantId) return deny('tenant.mismatch');
+        // The server cannot scan client-encrypted bytes, and plaintext would break the E2EE promise.
+        if (resource.e2eeMode === E2eeMode.MANDATORY) return deny('e2ee.no_attachments');
+        // Chancellery, HR, Finance, Legal: files stay inside the unit's own channels.
+        if (src.restricted && (!src.orgUnitId || resource.orgUnitId !== src.orgUnitId)) return deny('dlp.no_external_forward');
       }
       return null;
     }

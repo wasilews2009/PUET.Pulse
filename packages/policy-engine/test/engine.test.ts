@@ -752,3 +752,36 @@ describe('anonymous appeals to trust services (Phase 9)', () => {
     expect(canSeeInDirectory(pseudonym(), target())).toBe(false);
   });
 });
+
+describe('file forwarding (Phase 9)', () => {
+  const OU_CHANCELLERY = 'ou-chancellery';
+  const staffer = () => lecturer({ orgUnitIds: [OU_CHANCELLERY] });
+  const source = (over: Partial<NonNullable<Resource['forwardSource']>> = {}) => ({ tenantId: T_MAIN, restricted: false, confidential: false, ...over });
+  const target = (over: Partial<Resource> = {}) => channel({ id: 'ch-target', channelType: ChannelType.PRIVATE_GROUP, ...over });
+
+  it('a member forwards a released file into a channel they may post in', () => {
+    expect(engine.can(student(), Action.FILE_FORWARD, target({ forwardSource: source() }), env())).toBe(true);
+    expect(engine.evaluate(student(), Action.FILE_FORWARD, target({ isMember: false, memberRole: undefined, forwardSource: source() }), env()).reason).toBe('membership.required');
+    expect(engine.evaluate(student(), Action.FILE_FORWARD, target({ archived: true, forwardSource: source() }), env()).reason).toBe('channel.archived');
+  });
+
+  it('DLP: files of the Chancellery, HR, Finance and Legal channels never leave the unit', () => {
+    const restricted = source({ restricted: true, orgUnitId: OU_CHANCELLERY });
+    expect(engine.can(staffer(), Action.FILE_FORWARD, target({ orgUnitId: OU_CHANCELLERY, forwardSource: restricted }), env())).toBe(true);
+    expect(engine.evaluate(staffer(), Action.FILE_FORWARD, target({ orgUnitId: undefined, forwardSource: restricted }), env()).reason).toBe('dlp.no_external_forward');
+    expect(engine.evaluate(staffer(), Action.FILE_FORWARD, target({ channelType: ChannelType.DIRECT, orgUnitId: undefined, forwardSource: restricted }), env()).reason).toBe('dlp.no_external_forward');
+    expect(engine.evaluate(staffer(), Action.FILE_FORWARD, target({ orgUnitId: OU_HR, forwardSource: restricted }), env()).reason).toBe('dlp.no_external_forward');
+  });
+
+  it('DLP: confidential files are never forwarded, nor into another tenant or an E2EE room', () => {
+    expect(engine.evaluate(student(), Action.FILE_FORWARD, target({ forwardSource: source({ confidential: true }) }), env()).reason).toBe('dlp.view_only');
+    expect(engine.evaluate(student(), Action.FILE_FORWARD, target({ forwardSource: source({ tenantId: T_COLLEGE }) }), env()).reason).toBe('tenant.mismatch');
+    expect(engine.evaluate(student(), Action.FILE_FORWARD, target({ e2eeMode: E2eeMode.MANDATORY, forwardSource: source() }), env()).reason).toBe('e2ee.no_attachments');
+  });
+
+  it('IDOR: a forward without server-computed source facts, or onto a non-channel resource, is denied', () => {
+    expect(engine.evaluate(student(), Action.FILE_FORWARD, target(), env()).reason).toBe('file.forward_source');
+    expect(engine.evaluate(student(), Action.FILE_FORWARD, { ...target({ forwardSource: source() }), type: ResourceType.FILE }, env()).reason).toBe('resource.type_mismatch');
+    expect(engine.can(student(), Action.FILE_FORWARD, { type: ResourceType.SELF, tenantId: T_MAIN, ownerId: 'u-student' }, env())).toBe(false);
+  });
+});

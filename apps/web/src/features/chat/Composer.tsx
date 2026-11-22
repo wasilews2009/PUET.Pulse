@@ -1,4 +1,5 @@
 import { ChartBar, Paperclip, PaperPlaneRight } from '@phosphor-icons/react';
+import { minorContentFlags } from '@puet/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -7,6 +8,7 @@ import { keys } from '../../api/queries';
 import type { Channel, FileItem } from '../../api/types';
 import { cx, IconButton, InlineError, Toggle } from '../../components/ui';
 import { getSocket } from '../../realtime/socket';
+import { useMe } from '../../session/session';
 import { NewPollDialog } from '../polls/NewPollDialog';
 import { isModerator } from './channel-utils';
 import { useSend } from './useSend';
@@ -16,6 +18,7 @@ const MAX_MB = 50;
 export function Composer({ channel, threadRootId = null, onUploaded }: { channel: Channel; threadRootId?: string | null; onUploaded?: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const me = useMe();
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [confidential, setConfidential] = useState(false);
@@ -51,13 +54,18 @@ export function Composer({ channel, threadRootId = null, onUploaded }: { channel
   const submit = () => {
     const body = text.trim();
     if (!body || send.isPending) return;
+    // Minors: the same filter the API applies, here also for end-to-end encrypted chats.
+    if (me.isMinor && minorContentFlags(body).length > 0) {
+      setError(t('safety.blocked'));
+      return;
+    }
     send.mutate({ text: body, requiresAck: directive && directiveAllowed }, {
       onSuccess: () => {
         setText('');
         setDirective(false);
         setError(null);
       },
-      onError: () => setError(t('message.failed')),
+      onError: (e) => setError(e instanceof ApiError && e.status === 422 ? t('safety.blocked') : t('message.failed')),
     });
   };
 

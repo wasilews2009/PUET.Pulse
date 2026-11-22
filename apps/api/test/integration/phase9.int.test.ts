@@ -164,7 +164,11 @@ describe.skipIf(!enabled)('Phase 9 end-to-end (PostgreSQL)', () => {
       records: [
         { hrId: `O-${sfx}`, corporateId: `O-${sfx}`, email: `o-${sfx}@puet.test`, fullNameUk: 'Омбудсмен Тест', position: 'Студентський омбудсмен', orgUnitCodes: ['OMBUDSMAN'], roles: [{ role: 'TRUST_SERVICE_OFFICER', orgUnitCode: 'OMBUDSMAN' }] },
         { hrId: `L-${sfx}`, corporateId: `L-${sfx}`, email: `l-${sfx}@puet.test`, fullNameUk: 'Викладач Дев’ять', position: 'Доцент', primaryDepartmentCode: 'COMPUTER_SCIENCE_IT', roles: [{ role: 'LECTURER' }] },
+        { hrId: `C-${sfx}`, corporateId: `C-${sfx}`, email: `c-${sfx}@puet.test`, fullNameUk: 'Діловод Канцелярії', position: 'Діловод', orgUnitCodes: ['CHANCELLERY'], roles: [{ role: 'ADMIN_STAFF', orgUnitCode: 'CHANCELLERY' }] },
       ],
+    });
+    await webhook('lyceum', 'edebo/students', {
+      records: ['P1', 'P2'].map((n) => ({ edeboId: `${n}-${sfx}`, corporateId: `${n}-${sfx}`, email: `${n.toLowerCase()}-${sfx}@puet.test`, fullNameUk: `Учень ${n}`, educationLevel: 'LYCEUM', groupCode: `10B-${sfx}`, courseYear: 10 })),
     });
     const student = (n: string, group: string) => ({
       edeboId: `${n}-${sfx}`,
@@ -182,12 +186,14 @@ describe.skipIf(!enabled)('Phase 9 end-to-end (PostgreSQL)', () => {
       semester: { code: `S9-${sfx}`, startsOn: '2026-09-01', endsOn: '2027-01-31', isCurrent: true },
       offerings: [{ externalId: `CO9-${sfx}`, departmentCode: 'COMPUTER_SCIENCE_IT', discipline: { code: `AL-${sfx}`, nameUk: 'Алгоритми', nameEn: 'Algorithms' }, lecturerHrIds: [`L-${sfx}`], groupCodes: [`KN9-${sfx}`] }],
     });
-    for (const n of ['S1', 'S2', 'X']) ids[n] = (await prisma.user.findUniqueOrThrow({ where: { edeboId: `${n}-${sfx}` } })).id;
+    for (const n of ['S1', 'S2', 'X', 'P1', 'P2']) ids[n] = (await prisma.user.findUniqueOrThrow({ where: { edeboId: `${n}-${sfx}` } })).id;
+    ids.C = (await prisma.user.findUniqueOrThrow({ where: { hrId: `C-${sfx}` } })).id;
     ids.O = (await prisma.user.findUniqueOrThrow({ where: { hrId: `O-${sfx}` } })).id;
     ids.L = (await prisma.user.findUniqueOrThrow({ where: { hrId: `L-${sfx}` } })).id;
     courseChannelId = (await prisma.courseOffering.findFirstOrThrow({ where: { externalId: `CO9-${sfx}` }, include: { channel: true } })).channel!.id;
-    for (const n of ['S1', 'S2', 'X', 'L']) await login(n, { sub: `sub-${n}-${sfx}`, email: `${n.toLowerCase()}-${sfx}@puet.test`, amr: ['pwd'] });
+    for (const n of ['S1', 'S2', 'X', 'L', 'P1']) await login(n, { sub: `sub-${n}-${sfx}`, email: `${n.toLowerCase()}-${sfx}@puet.test`, amr: ['pwd'] });
     await login('O', { sub: `sub-O-${sfx}`, email: `o-${sfx}@puet.test`, amr: ['pwd', 'otp'] });
+    await login('C', { sub: `sub-C-${sfx}`, email: `c-${sfx}@puet.test`, amr: ['pwd', 'otp'] });
   }, 120_000);
 
   afterAll(async () => {
@@ -318,5 +324,76 @@ describe.skipIf(!enabled)('Phase 9 end-to-end (PostgreSQL)', () => {
     expect((await prisma.user.findUniqueOrThrow({ where: { id: a.pseudonymId } })).status).toBe('OFFBOARDED');
     expect((await as('X').get('/auth/me')).status).toBe(401);
     expect((await as('X', a.pseudonymId).get(`/channels/${a.channelId}/messages`)).status).toBe(403);
+  });
+
+  // ── No forwarding of files outside restricted units ───────────
+
+  async function readyFile(who: string, channelId: string, name: string) {
+    const res = await as(who).upload(channelId, await plainPdf(name), `${name}.pdf`);
+    expect(res.status).toBe(201);
+    const dto = await json<{ id: string }>(res);
+    expect(await app.get(FilesService).process(dto.id)).toBe('released');
+    return dto.id;
+  }
+
+  it('DLP: a Chancellery file stays in Chancellery channels; other files can be forwarded where the person may post', async () => {
+    const chancellery = await prisma.channel.findFirstOrThrow({ where: { orgUnit: { code: 'CHANCELLERY', tenant: { code: 'PUET_MAIN' } }, members: { some: { userId: ids.C } } } });
+    const unitChannels = await json<{ id: string; forwardRestricted: boolean }[]>(await as('C').get('/me/channels'));
+    expect(unitChannels.find((c) => c.id === chancellery.id)?.forwardRestricted).toBe(true);
+    const dm = { id: (await json<{ channelId: string }>(await as('L').post(`/users/${ids.C}/direct`))).channelId };
+
+    const order = await readyFile('C', chancellery.id, 'Order');
+    // Outside the unit: refused and audited, the target stays empty.
+    expect((await as('C').post(`/files/${order}/forward`, { channelId: dm.id })).status).toBe(403);
+    expect(await prisma.fileObject.count({ where: { channelId: dm.id } })).toBe(0);
+    const denied = await prisma.auditLog.findFirst({ where: { resourceId: order, action: 'file.forward', outcome: 'DENIED' } });
+    expect(denied?.reason).toBe('dlp.no_external_forward');
+    // Inside the unit: allowed, and the copy carries the same served bytes.
+    const copy = await as('C').post(`/files/${order}/forward`, { channelId: chancellery.id });
+    expect(copy.status).toBe(201);
+    const copied = await json<{ id: string; status: string; sha256: string }>(copy);
+    const original = await prisma.fileObject.findUniqueOrThrow({ where: { id: order } });
+    expect(copied).toMatchObject({ status: 'READY', sha256: original.servedSha256 });
+
+    // An ordinary file: forwarded into a chat the person is in; never into one they are not in (IDOR).
+    const notes = await readyFile('L', courseChannelId, 'Notes');
+    expect((await as('L').post(`/files/${notes}/forward`, { channelId: dm.id })).status).toBe(201);
+    expect((await as('L').post(`/files/${notes}/forward`, { channelId: chancellery.id })).status).toBe(403);
+    expect((await as('S2').post(`/files/${notes}/forward`, { channelId: dm.id })).status).toBe(403);
+    expect((await as('L').post(`/files/${notes}/forward`, { channelId: randomUUID() })).status).toBe(403);
+    // Confidential files are view-only: never forwarded.
+    const conf = await as('L').upload(courseChannelId, await plainPdf('Secret'), 'Secret.pdf');
+    expect(conf.status).toBe(201);
+    const confId = (await json<{ id: string }>(conf)).id;
+    await prisma.fileObject.update({ where: { id: confId }, data: { confidential: true } });
+    expect(await app.get(FilesService).process(confId)).toBe('released');
+    expect((await as('L').post(`/files/${confId}/forward`, { channelId: dm.id })).status).toBe(403);
+  });
+
+  // ── Content filter for minors ─────────────────────────────────
+
+  it('minor protection: obscene words and outside links never reach lyceum pupils; adults are not filtered', async () => {
+    const group = await prisma.channel.findFirstOrThrow({ where: { academicGroup: { code: `10B-${sfx}` } } });
+    const send = (who: string, channelId: string, body: string) => as(who).post(`/channels/${channelId}/messages`, { body });
+
+    const rude = await send('P1', group.id, 'Ти х.у.й');
+    expect(rude.status).toBe(422);
+    expect(await json<{ flags: string[] }>(rude)).toMatchObject({ flags: ['PROFANITY'] });
+    expect((await send('P1', group.id, 'Дивись https://casino.example/bonus')).status).toBe(422);
+    expect((await send('P1', group.id, 'Розклад: https://puet.edu.ua/rozklad')).status).toBe(201);
+    expect((await send('P1', group.id, 'Сухий хліб і страхування')).status).toBe(201);
+    // The audit records the rule, never the text.
+    const audit = await prisma.auditLog.findMany({ where: { resourceId: group.id, reason: 'content.minor_filter' } });
+    expect(audit.length).toBe(2);
+    expect(JSON.stringify(audit, (_k, v) => (typeof v === 'bigint' ? v.toString() : v))).not.toContain('casino');
+
+    // An edit cannot smuggle the words in afterwards.
+    const ok = await json<{ id: string }>(await send('P1', group.id, 'Привіт'));
+    expect((await http(`/messages/${ok.id}`, { method: 'PATCH', cookie: cookies.P1!, body: JSON.stringify({ body: 'бляха, сука' }) })).status).toBe(422);
+
+    // Adults among adults: the filter does not apply.
+    const topic = await json<{ id: string }>(await send('L', courseChannelId, 'Тема 1'));
+    const reply = await as('S1').post(`/channels/${courseChannelId}/messages`, { body: 'https://example.com/article', threadRootId: topic.id });
+    expect(reply.status).toBe(201);
   });
 });

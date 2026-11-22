@@ -1,4 +1,5 @@
-import { ChatCircleText, Lock, ShieldWarning, Trash, WarningCircle } from '@phosphor-icons/react';
+import { ChatCircleText, EyeSlash, Lock, ShieldWarning, Trash, WarningCircle } from '@phosphor-icons/react';
+import { minorContentFlags } from '@puet/shared';
 import { useMutation } from '@tanstack/react-query';
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -13,6 +14,14 @@ import { PollCard } from '../polls/PollCard';
 import { DirectiveBar } from './Directive';
 import { MessageBody } from './MessageBody';
 import { useDecrypted } from './useDecrypted';
+
+/**
+ * Minors' devices filter end-to-end encrypted text themselves (the server cannot
+ * read it); plaintext channels are filtered by the API before anything is stored.
+ */
+export function hiddenForMinor(isMinor: boolean, plain: { text: string | null; encrypted: boolean }) {
+  return isMinor && plain.encrypted && plain.text !== null && minorContentFlags(plain.text).length > 0;
+}
 
 function dayLabel(iso: string, lang: string, t: (k: string) => string) {
   const d = new Date(iso);
@@ -72,6 +81,11 @@ export function Bubble({ m, channel, onOpenThread, showAuthor }: { m: Message; c
             <PollCard pollId={m.pollId} channel={channel} />
           ) : plain.text === null ? (
             <Skeleton className="h-4 w-40" />
+          ) : hiddenForMinor(me.isMinor, plain) ? (
+            <span className="flex items-start gap-1 text-muted">
+              <EyeSlash size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
+              {t('safety.hidden')}
+            </span>
           ) : (
             <MessageBody text={plain.text} />
           )}

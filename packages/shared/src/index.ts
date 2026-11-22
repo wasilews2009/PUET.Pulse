@@ -207,6 +207,8 @@ export const Action = {
   ADMISSIONS_KB_MANAGE: 'admissions.kb.manage',
   /** Phase 9: open, list and close one's anonymous appeals to the trust services. */
   TRUST_INTAKE: 'trust.intake',
+  /** Forward a released file into another channel (DLP: not outside a restricted unit). */
+  FILE_FORWARD: 'file.forward',
 } as const;
 export type Action = (typeof Action)[keyof typeof Action];
 
@@ -264,3 +266,5 @@ export const SYNC_ASSIGNABLE_ROLES: readonly RoleCode[] = [
   RoleCode.GROUP_LEADER,
 ];
 export type ResourceType = (typeof ResourceType)[keyof typeof ResourceType];
+
+export * from './content-filter';
