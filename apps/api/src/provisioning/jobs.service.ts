@@ -1,3 +1,4 @@
+import { EncryptedBlobsService } from '../files/encrypted-blobs';
 import { PadesService } from '../pki/pades.service';
 import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
@@ -50,6 +51,7 @@ export class JobsService implements OnApplicationBootstrap, OnModuleDestroy {
     @Inject(OutboxService) private readonly outbox: OutboxService,
     @Inject(BotInboxService) private readonly botInbox: BotInboxService,
     @Inject(PadesService) private readonly pades: PadesService,
+    @Inject(EncryptedBlobsService) private readonly blobs: EncryptedBlobsService,
   ) {}
 
   readonly jobs: Job[] = [
@@ -63,6 +65,7 @@ export class JobsService implements OnApplicationBootstrap, OnModuleDestroy {
     { name: 'outbox-flush', everyMs: 30_000, run: () => this.outbox.flush() },
     { name: 'bot-purge', everyMs: 3_600_000, run: () => this.botInbox.purgeExpired() },
     { name: 'pades-drafts', everyMs: 600_000, run: () => this.pades.purgeExpiredDrafts() },
+    { name: 'e2ee-blobs', everyMs: 600_000, run: () => this.blobs.purgeExpired() },
   ];
 
   onApplicationBootstrap() {

@@ -24,6 +24,7 @@ import { PollsController } from './polls/polls.controller';
 import { PollsService } from './polls/polls.service';
 import { AnnotationsService } from './files/annotations';
 import { FilesController } from './files/files.controller';
+import { EncryptedBlobsController, EncryptedBlobsService } from './files/encrypted-blobs';
 import { FileForwardService } from './files/file-forward.service';
 import { FilesService } from './files/files.service';
 import { ClamdScanner, MALWARE_SCANNER } from './files/malware-scanner';
@@ -108,6 +109,7 @@ export const REDIS = Symbol('REDIS');
     IntegrationsController,
     AdminController,
     TrustController,
+    EncryptedBlobsController,
   ],
   providers: [
     { provide: APP_CONFIG, useFactory: () => loadConfig() },
@@ -131,6 +133,7 @@ export const REDIS = Symbol('REDIS');
     { provide: EXTERNAL_SIGNATURE_PROVIDER, inject: [APP_CONFIG], useFactory: (cfg: AppConfig) => new ExternalQesAdapter(cfg.pki.qes) },
     FilesService,
     FileForwardService,
+    EncryptedBlobsService,
     AnnotationsService,
     PkiService,
     SignaturesService,

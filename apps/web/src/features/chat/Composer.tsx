@@ -10,6 +10,7 @@ import { cx, IconButton, InlineError, Toggle } from '../../components/ui';
 import { getSocket } from '../../realtime/socket';
 import { useMe } from '../../session/session';
 import { NewPollDialog } from '../polls/NewPollDialog';
+import { MAX_E2EE_MB, NewE2eePollDialog, useSendEncryptedFile } from './E2eeContent';
 import { isModerator } from './channel-utils';
 import { useSend } from './useSend';
 
@@ -25,8 +26,12 @@ export function Composer({ channel, threadRootId = null, onUploaded }: { channel
   const fileInput = useRef<HTMLInputElement>(null);
   const lastTyping = useRef(0);
   const send = useSend(channel, threadRootId);
-  // The server cannot scan client-encrypted bytes, so MANDATORY E2EE channels take no attachments yet.
-  const attachAllowed = channel.e2eeMode !== 'MANDATORY' && !threadRootId;
+  // MANDATORY E2EE channels: files are encrypted on this device (the server keeps ciphertext only).
+  const sealedFiles = channel.e2eeMode === 'MANDATORY';
+  const attachAllowed = !threadRootId;
+  const sendSealed = useSendEncryptedFile(channel);
+  // Encrypted rooms: polls are Megolm events tallied on each device.
+  const e2eePollAllowed = !threadRootId && channel.e2eeMode !== 'DISABLED' && !channel.archived;
   // Polls are stored readable by the server, so only unencrypted channels offer them (same rule as the API).
   const moderated = channel.type === 'GOVERNANCE' || channel.type === 'ANNOUNCEMENT' || channel.type === 'EMERGENCY';
   const pollAllowed = !threadRootId && channel.e2eeMode === 'DISABLED' && (!moderated || isModerator(channel));
@@ -92,7 +97,7 @@ export function Composer({ channel, threadRootId = null, onUploaded }: { channel
           <InlineError>{error}</InlineError>
         </div>
       )}
-      {upload.isPending && (
+      {(upload.isPending || sendSealed.isPending) && (
         <p role="status" className="mb-2 caption-4 text-muted">
           {t('files.uploading')}
         </p>
@@ -114,20 +119,25 @@ export function Composer({ channel, threadRootId = null, onUploaded }: { channel
               aria-hidden="true"
               onChange={(e) => {
                 const f = e.target.files?.[0];
-                if (f) upload.mutate(f);
+                if (f && sealedFiles)
+                  sendSealed.mutate(f, {
+                    onSuccess: () => setError(null),
+                    onError: (e) => setError(e.message === 'too-large' ? t('files.tooLarge', { mb: MAX_E2EE_MB }) : e.message === 'type' ? t('e2eeFile.badType') : t('files.uploadFailed')),
+                  });
+                else if (f) upload.mutate(f);
                 e.target.value = '';
               }}
             />
             <IconButton
               label={attachAllowed ? t('message.attach') : t('message.attachDisabledE2ee')}
-              disabled={!attachAllowed || upload.isPending}
+              disabled={!attachAllowed || upload.isPending || sendSealed.isPending}
               onClick={() => fileInput.current?.click()}
             >
               <Paperclip size={22} />
             </IconButton>
           </>
         )}
-        {pollAllowed && (
+        {(pollAllowed || e2eePollAllowed) && (
           <IconButton label={t('poll.create')} onClick={() => setPollOpen(true)}>
             <ChartBar size={22} />
           </IconButton>
@@ -156,15 +166,16 @@ export function Composer({ channel, threadRootId = null, onUploaded }: { channel
           <PaperPlaneRight size={20} weight="fill" />
         </button>
       </form>
-      {((attachAllowed && channel.type !== 'DIRECT' && channel.type !== 'PRIVATE_GROUP') || directiveAllowed) && (
+      {((attachAllowed && !sealedFiles && channel.type !== 'DIRECT' && channel.type !== 'PRIVATE_GROUP') || directiveAllowed) && (
         <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
-          {attachAllowed && channel.type !== 'DIRECT' && channel.type !== 'PRIVATE_GROUP' && (
+          {attachAllowed && !sealedFiles && channel.type !== 'DIRECT' && channel.type !== 'PRIVATE_GROUP' && (
             <Toggle checked={confidential} onChange={setConfidential} label={t('message.attachConfidential')} />
           )}
           {directiveAllowed && <Toggle checked={directive} onChange={setDirective} label={t('directive.toggle')} />}
         </div>
       )}
       {pollAllowed && <NewPollDialog channel={channel} open={pollOpen} onClose={() => setPollOpen(false)} />}
+      {e2eePollAllowed && <NewE2eePollDialog channel={channel} open={pollOpen} onClose={() => setPollOpen(false)} />}
     </div>
   );
 }

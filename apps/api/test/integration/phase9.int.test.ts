@@ -396,4 +396,36 @@ describe.skipIf(!enabled)('Phase 9 end-to-end (PostgreSQL)', () => {
     const reply = await as('S1').post(`/channels/${courseChannelId}/messages`, { body: 'https://example.com/article', threadRootId: topic.id });
     expect(reply.status).toBe(201);
   });
+
+  // ── Attachments of end-to-end encrypted rooms ────────────────
+
+  it('E2EE attachments: only ciphertext reaches the server, readable only by members of that room', async () => {
+    const appeal = await openAppeal('S2');
+    const cipher = Buffer.concat([Buffer.from('not-a-real-gcm-ciphertext-'), Buffer.alloc(32, 7)]);
+    const post = (who: string, channelId: string, body: Buffer, persona?: string) =>
+      http(`/channels/${channelId}/blobs`, { method: 'POST', cookie: cookies[who]!, body, headers: { 'content-type': 'application/octet-stream' }, ...(persona ? { persona } : {}) });
+
+    // The pseudonym attaches evidence in its trust room; the officer reads exactly those bytes.
+    const up = await post('S2', appeal.channelId, cipher, appeal.pseudonymId);
+    expect(up.status).toBe(201);
+    const { blobId, sha256 } = await json<{ blobId: string; sha256: string }>(up);
+    expect(sha256).toMatch(/^[0-9a-f]{64}$/);
+    const got = await as('O').get(`/channels/${appeal.channelId}/blobs/${blobId}`);
+    expect(got.status).toBe(200);
+    expect(got.headers.get('content-security-policy')).toContain('sandbox');
+    expect(Buffer.from(await got.arrayBuffer()).equals(cipher)).toBe(true);
+
+    // IDOR: other people, and other rooms' ids, see nothing.
+    expect((await as('S1').get(`/channels/${appeal.channelId}/blobs/${blobId}`)).status).toBe(403);
+    expect((await as('L').get(`/channels/${courseChannelId}/blobs/${blobId}`)).status).toBe(404);
+    // Official channels take scanned plaintext files instead; tiny bodies are not ciphertexts.
+    expect((await post('L', courseChannelId, cipher)).status).toBe(400);
+    expect((await post('S2', appeal.channelId, Buffer.from('short'), appeal.pseudonymId)).status).toBe(400);
+    // The database refuses an encrypted blob in an unencrypted channel and any change to a stored one.
+    const main = await prisma.tenant.findUniqueOrThrow({ where: { code: 'PUET_MAIN' } });
+    await expect(
+      prisma.encryptedBlob.create({ data: { tenantId: main.id, channelId: courseChannelId, uploaderId: ids.L!, sizeBytes: 40, sha256: 'a'.repeat(64), storageKey: 'x' } }),
+    ).rejects.toThrow();
+    await expect(prisma.encryptedBlob.update({ where: { id: blobId }, data: { sizeBytes: 1 } })).rejects.toThrow();
+  });
 });

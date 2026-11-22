@@ -867,6 +867,7 @@ model Channel {
   members        ChannelMember[]
   messages       Message[]
   files          FileObject[]
+  encryptedBlobs EncryptedBlob[]
   polls          Poll[]
   calls          Call[]
   anonymousCase  AnonymousCase?
@@ -1746,4 +1747,27 @@ model IntegrationOutbox {
 
   @@index([status, nextAttemptAt])
   @@map("integration_outbox")
+}
+
+/// Phase 9: an attachment of an end-to-end encrypted room. The client encrypts the
+/// bytes (AES-256-GCM, WebCrypto) and sends the key inside the Megolm message; the
+/// server keeps only ciphertext, its size and SHA-256, and cannot scan or read it.
+model EncryptedBlob {
+  id         String    @id @default(uuid()) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  channelId  String    @map("channel_id") @db.Uuid
+  uploaderId String    @map("uploader_id") @db.Uuid
+  sizeBytes  Int       @map("size_bytes")
+  /// SHA-256 of the ciphertext (integrity of storage; the key never reaches the server).
+  sha256     String
+  storageKey String    @map("storage_key")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  /// Rooms with disappearing messages: the blob goes with them.
+  expiresAt  DateTime? @map("expires_at")
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, createdAt])
+  @@index([expiresAt])
+  @@map("encrypted_blobs")
 }

@@ -12,6 +12,7 @@ import { useMe } from '../../session/session';
 import { CallCard } from '../calls/CallCard';
 import { PollCard } from '../polls/PollCard';
 import { DirectiveBar } from './Directive';
+import { AttachmentCard, E2eePollCard, isPollEvent, parseFile, parsePoll } from './E2eeContent';
 import { MessageBody } from './MessageBody';
 import { useDecrypted } from './useDecrypted';
 
@@ -41,6 +42,11 @@ export function Bubble({ m, channel, onOpenThread, showAuthor }: { m: Message; c
   const plain = useDecrypted(m);
   const name = mine ? '' : sender.data ? pick(i18n.language, sender.data.fullNameUk, sender.data.fullNameEn) : t('chats.hiddenUser');
   const remove = useMutation({ mutationFn: () => api(`/messages/${m.id}`, { method: 'DELETE' }) });
+  const e2eeFile = parseFile(plain.content);
+  const e2eePoll = parsePoll(plain.content);
+
+  // Votes and poll ends are counted inside their poll card.
+  if (!m.deleted && isPollEvent(plain.content)) return null;
 
   return (
     <li className={cx('group flex gap-2', mine ? 'flex-row-reverse' : 'flex-row')}>
@@ -81,6 +87,10 @@ export function Bubble({ m, channel, onOpenThread, showAuthor }: { m: Message; c
             <PollCard pollId={m.pollId} channel={channel} />
           ) : plain.text === null ? (
             <Skeleton className="h-4 w-40" />
+          ) : e2eeFile ? (
+            <AttachmentCard channelId={channel.id} f={e2eeFile} />
+          ) : e2eePoll ? (
+            <E2eePollCard m={m} poll={e2eePoll} channel={channel} />
           ) : hiddenForMinor(me.isMinor, plain) ? (
             <span className="flex items-start gap-1 text-muted">
               <EyeSlash size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
