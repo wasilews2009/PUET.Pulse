@@ -47,3 +47,14 @@ self.addEventListener('fetch', (event) => {
     );
   }
 });
+
+// A tap on a (content-free) notification brings the app to the front.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      const own = list.find((c) => new URL(c.url).origin === self.location.origin);
+      return own ? own.focus() : self.clients.openWindow('/');
+    }),
+  );
+});

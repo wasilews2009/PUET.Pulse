@@ -14,7 +14,8 @@ export interface ShellConfig {
 export class ConfigError extends Error {}
 
 /** Reads PULSE_URL and PULSE_SSO_HOSTS; refuses anything but https (http only for localhost development). */
-export function parseConfig(env: Record<string, string | undefined>): ShellConfig {
+export function parseConfig(env: Record<string, string | undefined>, opts: { allowLocalhost?: boolean } = {}): ShellConfig {
+  const allowLocalhost = opts.allowLocalhost ?? true;
   const raw = env.PULSE_URL ?? 'https://pulse.puet.edu.ua';
   let url: URL;
   try {
@@ -23,13 +24,38 @@ export function parseConfig(env: Record<string, string | undefined>): ShellConfi
     throw new ConfigError('PULSE_URL is not a URL');
   }
   const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
-  if (url.protocol !== 'https:' && !(local && url.protocol === 'http:')) throw new ConfigError('PULSE_URL must use https');
+  if (url.protocol !== 'https:' && !(allowLocalhost && local && url.protocol === 'http:')) throw new ConfigError('PULSE_URL must use https');
   if (url.username || url.password) throw new ConfigError('PULSE_URL must not carry credentials');
   const ssoHosts = (env.PULSE_SSO_HOSTS ?? '')
     .split(',')
     .map((h) => h.trim().toLowerCase())
     .filter((h) => /^[a-z0-9.-]+$/.test(h));
   return { origin: url.origin, ssoHosts };
+}
+
+/** Name of the server configuration baked into an installer (inside app.asar, next to main.js). */
+export const BUNDLED_CONFIG_FILE = 'pulse.json';
+
+/**
+ * Where the server address comes from. An installed app uses only the
+ * configuration baked in at build time (inside the integrity-checked
+ * app.asar): environment variables are ignored, so nothing on the machine can
+ * point the window at another origin, and plain http is refused even for
+ * localhost. A development run (`pnpm start`) reads PULSE_URL / PULSE_SSO_HOSTS.
+ */
+export function loadConfig(input: { packaged: boolean; bundled: string | null; env: Record<string, string | undefined> }): ShellConfig {
+  if (!input.packaged) return parseConfig(input.env);
+  if (input.bundled === null) throw new ConfigError(`${BUNDLED_CONFIG_FILE} is missing from the installed app`);
+  let data: unknown;
+  try {
+    data = JSON.parse(input.bundled);
+  } catch {
+    throw new ConfigError(`${BUNDLED_CONFIG_FILE} is not JSON`);
+  }
+  const o = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>;
+  if (typeof o.url !== 'string') throw new ConfigError(`${BUNDLED_CONFIG_FILE} has no url`);
+  const hosts = Array.isArray(o.ssoHosts) ? o.ssoHosts.filter((h): h is string => typeof h === 'string') : [];
+  return parseConfig({ PULSE_URL: o.url, PULSE_SSO_HOSTS: hosts.join(',') }, { allowLocalhost: false });
 }
 
 const parse = (s: string): URL | null => {

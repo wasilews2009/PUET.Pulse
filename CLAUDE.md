@@ -113,6 +113,9 @@ apps/
     src/i18n/          uk (default) and en dictionaries, same keys
     src/theme/         PUET tokens, Light / Dark, sanitized white-label overrides
   desktop/             Hardened Electron wrapper around the web client of one server
+                       (electron-builder: NSIS + MSI for Windows, server baked in)
+  android/             Trusted Web Activity (androidbrowserhelper): the web client
+                       in Chrome, no WebView, no code of its own
 packages/
   shared/              Domain vocabulary: tenants, roles, actions, channel types,
                        content filter for minors (used by API and web)
@@ -393,6 +396,26 @@ the same rules. Evaluation order, first deny wins, default deny:
 - Desktop (`apps/desktop`): no Node in the page, context isolation, sandbox,
   empty preload, navigation allowlist, permissions only for calls and
   notifications of the configured origin.
+
+**Client installers**
+
+- Installers carry the server address baked in at build time
+  (`apps/desktop/scripts/write-config.mjs` → `pulse.json` inside the
+  integrity-checked `app.asar`); an installed app ignores `PULSE_URL` and
+  refuses http. Electron fuses disable `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS`,
+  inspector flags and loading code outside `app.asar`. Keep Electron on a
+  supported major.
+- Android is a Trusted Web Activity, not a WebView or Capacitor bridge: the
+  page runs in the browser engine under the server's CSP, so E2EE (vodozemac
+  WebAssembly, WebCrypto, IndexedDB) works as in Chrome. The server publishes
+  `/.well-known/assetlinks.json` with the signing key fingerprints
+  (`apps/android/scripts/assetlinks.sh`). No permissions besides
+  `POST_NOTIFICATIONS`, no backups, no cleartext.
+- Code-signing certificates and the Android keystore live only in CI secrets
+  (`.github/workflows/clients.yml`), never in the repository. Release tags
+  `clients-vX.Y.Z` refuse to publish a debug-signed APK.
+- Page notifications go through the service worker
+  (`features/shell/notify.ts`): Chrome on Android rejects `new Notification()`.
 
 ## 5. Organizational topology and data model
 

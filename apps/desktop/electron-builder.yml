@@ -1,0 +1,82 @@
+# Installers of the PUET.Pulse desktop app (electron-builder).
+#   pnpm --filter @puet/desktop dist:win   (on Windows, or in CI: .github/workflows/clients.yml)
+# The server address is baked in by scripts/write-config.mjs (PULSE_URL, PULSE_SSO_HOSTS).
+# Code signing: set CSC_LINK (path or base64 of the .pfx) and CSC_KEY_PASSWORD in the
+# environment; the certificate itself is never committed (see apps/desktop/README.md).
+appId: ua.edu.puet.pulse
+productName: PUET.Pulse
+copyright: © Полтавський університет економіки і торгівлі
+artifactName: PUET.Pulse-${version}-${arch}.${ext}
+directories:
+  output: release
+  buildResources: assets
+files:
+  - package.json
+  - dist/**/*.js
+  - dist/pulse.json
+  - assets/icon.png
+  - "!**/*.map"
+  - "!**/*.d.ts"
+asar: true
+publish: null
+npmRebuild: false
+# Electron fuses: the packaged binary cannot be turned into a Node interpreter,
+# cannot load code from outside its integrity-checked app.asar, and encrypts cookies at rest.
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  loadBrowserProcessSpecificV8Snapshot: false
+  grantFileProtocolExtraPrivileges: false
+
+win:
+  icon: assets/icon.png
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+    - target: msi
+      arch: [x64]
+  # Signed with SHA-256 and an RFC 3161 timestamp when CSC_LINK is set.
+  signtoolOptions:
+    signingHashAlgorithms: [sha256]
+    rfc3161TimeStampServer: http://timestamp.digicert.com
+
+# Interactive installer for people: per-user by default (no administrator rights),
+# per-machine on request, Ukrainian and English.
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: PUET.Pulse
+  multiLanguageInstaller: true
+  installerLanguages: [uk_UA, en_US]
+  language: "1058"
+  deleteAppDataOnUninstall: false
+
+# Silent per-machine package for IT (GPO / Intune / SCCM): msiexec /i PUET.Pulse-x.y.z-x64.msi /qn
+msi:
+  oneClick: false
+  perMachine: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: PUET.Pulse
+  upgradeCode: f98c61f2-136d-4fb8-9888-4cd79abc5b03
+
+mac:
+  icon: assets/icon.png
+  category: public.app-category.business
+  target: [dmg]
+  hardenedRuntime: true
+
+linux:
+  icon: assets/icon.png
+  executableName: puet-pulse
+  category: Network;InstantMessaging
+  target: [AppImage, deb]
+  maintainer: IT Center PUET
