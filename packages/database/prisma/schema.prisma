@@ -532,6 +532,11 @@ model User {
   crossSigningKeys CrossSigningKey[]
   keyBackups       KeyBackupVersion[]
   secrets          UserSecret[]
+  polls            Poll[]              @relation("PollCreator")
+  pollVotes        PollParticipation[]
+  pollBallots      PollBallot[]
+  pollEligibility  PollEligible[]
+  messageAcks      MessageAck[]
 
   @@index([tenantId, status])
   @@index([tenantId, kind])
@@ -830,6 +835,7 @@ model Channel {
   members        ChannelMember[]
   messages       Message[]
   files          FileObject[]
+  polls          Poll[]
 
   @@index([tenantId, type])
   @@map("channels")
@@ -869,6 +875,8 @@ model Message {
   clientMessageId String?          @map("client_message_id")
   /// Priority alerts (Civil Protection) bypass DND and Quiet Hours.
   isPriority      Boolean          @default(false) @map("is_priority")
+  /// Directive: members confirm they have read it (Phase 6). Only moderators set it.
+  requiresAck     Boolean          @default(false) @map("requires_ack")
   expiresAt       DateTime?        @map("expires_at")
   editedAt        DateTime?        @map("edited_at")
   deletedAt       DateTime?        @map("deleted_at")
@@ -879,6 +887,8 @@ model Message {
   threadRoot  Message?     @relation("Thread", fields: [threadRootId], references: [id], onDelete: SetNull)
   replies     Message[]    @relation("Thread")
   attachments FileObject[]
+  poll        Poll?
+  acks        MessageAck[]
 
   @@unique([senderId, clientMessageId])
   @@index([channelId, createdAt])
@@ -1113,4 +1123,120 @@ model AuditLog {
   @@index([actorId, occurredAt])
   @@index([action, occurredAt])
   @@map("audit_logs")
+}
+
+// ───────────────────────────── Phase 6: polls, votes, directives ─────────────────────────────
+
+/// OPEN: who voted for what is recorded and shown. SECRET: only per-option counters are stored,
+/// so the database holds no link between a voter and a choice.
+enum PollMode {
+  OPEN
+  SECRET
+}
+
+enum PollStatus {
+  OPEN
+  CLOSED
+}
+
+/// A poll in a channel (informal), or a formal vote of a collegial body (quorum + protocol).
+/// Lives next to the timeline message that shows it. Only in E2EE-DISABLED channels.
+model Poll {
+  id             String     @id @default(uuid()) @db.Uuid
+  tenantId       String     @map("tenant_id") @db.Uuid
+  channelId      String     @map("channel_id") @db.Uuid
+  messageId      String     @unique @map("message_id") @db.Uuid
+  createdById    String     @map("created_by_id") @db.Uuid
+  question       String
+  /// Option labels (JSON array of strings). Formal votes use FOR / AGAINST / ABSTAIN.
+  options        Json
+  mode           PollMode
+  multipleChoice Boolean    @default(false) @map("multiple_choice")
+  /// Formal vote of a collegial body: eligible voters are frozen, quorum applies, a protocol is issued.
+  formal         Boolean    @default(false)
+  /// Minimum number of participants for the result to be valid (formal votes).
+  quorum         Int?
+  eligibleCount  Int        @map("eligible_count")
+  status         PollStatus @default(OPEN)
+  closesAt       DateTime?  @map("closes_at")
+  closedAt       DateTime?  @map("closed_at")
+  closedById     String?    @map("closed_by_id") @db.Uuid
+  /// Frozen tally at close: { counts: number[], participants: number }.
+  result         Json?
+  createdAt      DateTime   @default(now()) @map("created_at")
+
+  channel        Channel             @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  message        Message             @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  createdBy      User                @relation("PollCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  participations PollParticipation[]
+  ballots        PollBallot[]
+  tallies        PollTally[]
+  eligible       PollEligible[]
+
+  @@index([channelId, createdAt])
+  @@index([status, closesAt])
+  @@map("polls")
+}
+
+/// Who has voted (both modes). The primary key makes a second vote impossible.
+model PollParticipation {
+  pollId    String   @map("poll_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  poll Poll @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([pollId, userId])
+  @@map("poll_participations")
+}
+
+/// Choices of an OPEN poll, attributed to the voter.
+model PollBallot {
+  pollId        String @map("poll_id") @db.Uuid
+  userId        String @map("user_id") @db.Uuid
+  optionIndexes Int[]  @map("option_indexes")
+
+  poll Poll @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([pollId, userId])
+  @@map("poll_ballots")
+}
+
+/// Anonymous per-option counters of a SECRET poll. No voter, no timestamp.
+model PollTally {
+  pollId      String @map("poll_id") @db.Uuid
+  optionIndex Int    @map("option_index")
+  votes       Int    @default(0)
+
+  poll Poll @relation(fields: [pollId], references: [id], onDelete: Cascade)
+
+  @@id([pollId, optionIndex])
+  @@map("poll_tallies")
+}
+
+/// Formal votes: the members entitled to vote, frozen when the vote opens.
+model PollEligible {
+  pollId String @map("poll_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+
+  poll Poll @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([pollId, userId])
+  @@map("poll_eligible")
+}
+
+/// «Ознайомлений»: a member confirmed a directive. Append-only.
+model MessageAck {
+  messageId String   @map("message_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([messageId, userId])
+  @@map("message_acks")
 }

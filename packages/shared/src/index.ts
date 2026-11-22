@@ -163,6 +163,12 @@ export const Action = {
   FILE_ANNOTATE: 'file.annotate',
   /** Phase 4: start a multi-step approval route for one's own document. */
   APPROVAL_ROUTE_CREATE: 'approval.route.create',
+  /** Phase 6: start a poll (or, in a collegial body, a formal vote) in a channel. */
+  POLL_CREATE: 'poll.create',
+  /** Phase 6: close a poll early (its author or a channel moderator). */
+  POLL_MANAGE: 'poll.manage',
+  /** Phase 6: confirm a directive («Ознайомлений»). */
+  MESSAGE_ACK: 'message.ack',
 } as const;
 export type Action = (typeof Action)[keyof typeof Action];
 

@@ -47,7 +47,7 @@ const opt = <K extends string, V>(key: K, value: V | null | undefined) =>
 /** Channels, messages, files: membership is computed for the calling principal. */
 @Injectable()
 export class ChannelScopedResolver implements ResourceResolver {
-  readonly types = [ResourceType.CHANNEL, ResourceType.MESSAGE, ResourceType.FILE] as const;
+  readonly types = [ResourceType.CHANNEL, ResourceType.MESSAGE, ResourceType.FILE, ResourceType.VOTE] as const;
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
@@ -67,6 +67,15 @@ export class ChannelScopedResolver implements ResourceResolver {
       if (!msg || msg.deletedAt) return null;
       channel = msg.channel;
       ownerId = msg.senderId;
+    } else if (type === ResourceType.VOTE) {
+      const poll = await this.prisma.poll.findUnique({
+        where: { id },
+        select: { tenantId: true, createdById: true, message: { select: { deletedAt: true } }, channel: { select: channelSelect } },
+      });
+      // A poll whose message was deleted is gone for everybody; tenant must match its channel.
+      if (!poll || poll.message.deletedAt || poll.channel.tenantId !== poll.tenantId) return null;
+      channel = poll.channel;
+      ownerId = poll.createdById;
     } else {
       const file = await this.prisma.fileObject.findUnique({
         where: { id },

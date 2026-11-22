@@ -59,7 +59,13 @@ const CHANNEL_WRITE_ACTIONS: ReadonlySet<string> = new Set([
   Action.MESSAGE_SEND,
   Action.FILE_UPLOAD,
   Action.MESSAGE_EDIT,
-  Action.VOTE_CAST,
+]);
+
+/** Channel types where only OWNER/MODERATOR may start a poll: broadcasts and collegial bodies. */
+const MODERATED_POLL_CHANNELS: ReadonlySet<string> = new Set([
+  ChannelType.ANNOUNCEMENT,
+  ChannelType.EMERGENCY,
+  ChannelType.GOVERNANCE,
 ]);
 
 /** Roles whose grants let them oversee non-private channels inside their scope. */
@@ -419,6 +425,39 @@ export class PolicyEngine {
       if (!resource.isMember) return deny('membership.required');
       if (resource.ownerId !== principal.userId) return deny('ownership.required');
       return resource.archived ? deny('channel.archived') : null;
+    }
+
+    // Phase 6. Polls live in channels: membership decides; broadcasts and collegial bodies
+    // are moderated, but every member may vote and confirm directives there.
+    if (action === Action.POLL_CREATE) {
+      if (resource.type !== ResourceType.CHANNEL) return deny('resource.type_mismatch');
+      if (!resource.isMember) return deny('membership.required');
+      if (resource.archived) return deny('channel.archived');
+      if (resource.memberRole === MemberRole.READ_ONLY) return deny('channel.read_only');
+      if (resource.channelType && MODERATED_POLL_CHANNELS.has(resource.channelType) && !isModerator) {
+        return deny('channel.not_moderator');
+      }
+      return null;
+    }
+
+    if (action === Action.VOTE_CAST) {
+      if (resource.type !== ResourceType.VOTE) return deny('resource.type_mismatch');
+      if (!resource.isMember) return deny('membership.required');
+      if (resource.archived) return deny('channel.archived');
+      if (resource.memberRole === MemberRole.READ_ONLY) return deny('channel.read_only');
+      return null;
+    }
+
+    if (action === Action.POLL_MANAGE) {
+      if (resource.type !== ResourceType.VOTE) return deny('resource.type_mismatch');
+      if (!resource.isMember) return deny('membership.required');
+      if (resource.archived) return deny('channel.archived');
+      return resource.ownerId === principal.userId || isModerator ? null : deny('ownership.required');
+    }
+
+    if (action === Action.MESSAGE_ACK) {
+      if (resource.type !== ResourceType.MESSAGE) return deny('resource.type_mismatch');
+      return resource.isMember ? null : deny('membership.required');
     }
 
     // Only an approver named on the file's route decides; channel membership is not enough.

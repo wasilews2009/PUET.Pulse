@@ -10,7 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { REALTIME_BUS, type RealtimeBus } from '../realtime/realtime.bus';
 import type { EditMessageInput, SendMessageInput } from './messaging.schemas';
 
-const messageSelect = {
+export const messageSelect = {
   id: true,
   channelId: true,
   senderId: true,
@@ -20,10 +20,12 @@ const messageSelect = {
   body: true,
   ciphertext: true,
   isPriority: true,
+  requiresAck: true,
   createdAt: true,
   editedAt: true,
   expiresAt: true,
   deletedAt: true,
+  poll: { select: { id: true } },
 } as const;
 type MessageRow = Prisma.MessageGetPayload<{ select: typeof messageSelect }>;
 
@@ -38,6 +40,10 @@ export interface MessageDto {
   /** Base64 of the opaque vodozemac payload. */
   ciphertext: string | null;
   isPriority: boolean;
+  /** Directive: members confirm «Ознайомлений». */
+  requiresAck: boolean;
+  /** The poll this message shows, if any. */
+  pollId: string | null;
   createdAt: string;
   editedAt: string | null;
   expiresAt: string | null;
@@ -55,6 +61,8 @@ export function toDto(m: MessageRow): MessageDto {
     body: m.deletedAt ? null : m.body,
     ciphertext: m.deletedAt || !m.ciphertext ? null : Buffer.from(m.ciphertext).toString('base64'),
     isPriority: m.isPriority,
+    requiresAck: m.requiresAck,
+    pollId: m.poll?.id ?? null,
     createdAt: m.createdAt.toISOString(),
     editedAt: m.editedAt?.toISOString() ?? null,
     expiresAt: m.expiresAt?.toISOString() ?? null,
@@ -150,7 +158,7 @@ export class MessagingService {
     }));
   }
 
-  async history(channelId: string, q: { before?: string; limit: number; threadRootId?: string }) {
+  async history(principal: Principal, channelId: string, q: { before?: string; limit: number; threadRootId?: string }) {
     const now = new Date();
     const rows = await this.prisma.message.findMany({
       where: {
@@ -162,9 +170,17 @@ export class MessagingService {
       },
       orderBy: { createdAt: 'desc' },
       take: q.limit,
-      select: { ...messageSelect, _count: { select: { replies: { where: { deletedAt: null } } } } },
+      select: {
+        ...messageSelect,
+        _count: { select: { replies: { where: { deletedAt: null } } } },
+        acks: { where: { userId: principal.userId }, select: { createdAt: true } },
+      },
     });
-    return rows.map(({ _count, ...m }) => ({ ...toDto(m), replyCount: _count.replies }));
+    return rows.map(({ _count, acks, ...m }) => ({
+      ...toDto(m),
+      replyCount: _count.replies,
+      ...(m.requiresAck ? { acknowledgedAt: acks[0]?.createdAt.toISOString() ?? null } : {}),
+    }));
   }
 
   async members(channelId: string) {
@@ -188,6 +204,12 @@ export class MessagingService {
     if (!row) throw new NotFoundException();
 
     this.checkPayloadMode(row.e2eeMode, input);
+    if (input.requiresAck) {
+      // Directives are issued by those who moderate the channel (Rectorate, directors, commandants).
+      if (input.threadRootId) throw new BadRequestException('A directive cannot be a thread reply');
+      const decision = await this.policy.evaluate(principal, Action.CHANNEL_MODERATE, channel, { now: new Date() });
+      if (!decision.allowed) throw new ForbiddenException('Access denied');
+    }
     if (input.senderDeviceId) await this.checkOwnDevice(principal, input.senderDeviceId);
 
     if (input.threadRootId) {
@@ -228,6 +250,7 @@ export class MessagingService {
           senderDeviceId: input.senderDeviceId ?? null,
           clientMessageId: input.clientMessageId ?? null,
           isPriority,
+          requiresAck: input.requiresAck ?? false,
           expiresAt: row.messageTtlSeconds ? new Date(now.getTime() + row.messageTtlSeconds * 1000) : null,
         },
         select: messageSelect,
@@ -321,6 +344,57 @@ export class MessagingService {
       channelId: current.channelId,
     });
     return { id: message.id!, deleted: true };
+  }
+
+  // ───────────────────────────── Directives ─────────────────────────────
+
+  /** «Ознайомлений»: idempotent, append-only. */
+  async acknowledge(principal: Principal, message: Resource) {
+    const m = await this.prisma.message.findFirst({
+      where: { id: message.id!, deletedAt: null, channel: { tenantId: message.tenantId } },
+      select: { requiresAck: true, channelId: true, senderId: true },
+    });
+    if (!m) throw new NotFoundException();
+    if (!m.requiresAck) throw new BadRequestException('This message does not require acknowledgement');
+    let at: Date;
+    try {
+      at = (await this.prisma.messageAck.create({ data: { messageId: message.id!, userId: principal.userId }, select: { createdAt: true } })).createdAt;
+    } catch (e) {
+      if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')) throw e;
+      at = (await this.prisma.messageAck.findUniqueOrThrow({
+        where: { messageId_userId: { messageId: message.id!, userId: principal.userId } },
+        select: { createdAt: true },
+      })).createdAt;
+    }
+    // The author's other views refresh their counters; payload carries ids only.
+    await this.bus.emitToUsers([m.senderId, principal.userId], 'message.ack', { messageId: message.id, channelId: m.channelId });
+    return { messageId: message.id!, acknowledgedAt: at.toISOString() };
+  }
+
+  /** Who confirmed a directive: for its author and the channel's moderators. */
+  async acknowledgements(principal: Principal, message: Resource) {
+    const m = await this.prisma.message.findFirst({
+      where: { id: message.id!, deletedAt: null, channel: { tenantId: message.tenantId } },
+      select: { requiresAck: true, channelId: true, senderId: true },
+    });
+    if (!m) throw new NotFoundException();
+    if (m.senderId !== principal.userId) {
+      const decision = await this.policy.evaluate(principal, Action.CHANNEL_MODERATE, message, { now: new Date() });
+      if (!decision.allowed) throw new ForbiddenException('Access denied');
+    }
+    if (!m.requiresAck) throw new BadRequestException('This message does not require acknowledgement');
+    const [acks, members] = await Promise.all([
+      this.prisma.messageAck.findMany({ where: { messageId: message.id! }, select: { userId: true, createdAt: true }, orderBy: { createdAt: 'asc' } }),
+      currentRecipients(this.prisma, m.channelId),
+    ]);
+    const done = new Set(acks.map((a) => a.userId));
+    const audience = members.filter((id) => id !== m.senderId);
+    return {
+      messageId: message.id!,
+      total: audience.length,
+      acknowledged: acks.map((a) => ({ userId: a.userId, at: a.createdAt.toISOString() })),
+      pending: audience.filter((id) => !done.has(id)),
+    };
   }
 
   async markRead(principal: Principal, channelId: string, messageId?: string) {

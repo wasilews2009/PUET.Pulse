@@ -75,7 +75,7 @@ export class MessagingController {
   @Authorize(Action.MESSAGE_READ, CHANNEL)
   history(@Req() req: AuthenticatedRequest, @Query() query: Record<string, unknown>) {
     const { channelId: _omit, ...rest } = query;
-    return this.messaging.history(req.authz!.resource.id!, parse(historyQuery, rest));
+    return this.messaging.history(req.principal!, req.authz!.resource.id!, parse(historyQuery, rest));
   }
 
   @Post('channels/:channelId/messages')
@@ -102,6 +102,19 @@ export class MessagingController {
   @Authorize(Action.MESSAGE_EDIT, MESSAGE)
   edit(@Req() req: AuthenticatedRequest, @Body() body: unknown) {
     return this.messaging.edit(req.principal!, req.authz!.resource, parse(editMessageInput, body));
+  }
+
+  @Post('messages/:messageId/ack')
+  @HttpCode(200)
+  @Authorize(Action.MESSAGE_ACK, MESSAGE)
+  acknowledge(@Req() req: AuthenticatedRequest) {
+    return this.messaging.acknowledge(req.principal!, req.authz!.resource);
+  }
+
+  @Get('messages/:messageId/acks')
+  @Authorize(Action.MESSAGE_READ, MESSAGE)
+  acknowledgements(@Req() req: AuthenticatedRequest) {
+    return this.messaging.acknowledgements(req.principal!, req.authz!.resource);
   }
 
   @Delete('messages/:messageId')

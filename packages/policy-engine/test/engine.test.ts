@@ -471,3 +471,58 @@ describe('documents, signatures and approval routes (Phase 4)', () => {
     expect(engine.evaluate(student(), Action.DOCUMENT_SIGN, channel(), env()).reason).toBe('resource.type_mismatch');
   });
 });
+
+describe('polls, formal votes and directives (Phase 6)', () => {
+  const poll = (over: Parameters<typeof channel>[0] = {}) => channel({ type: ResourceType.VOTE, ...over });
+
+  it('IDOR: a non-member can neither vote in nor read a poll of another channel', () => {
+    const foreign = poll({ isMember: false, memberRole: undefined });
+    expect(engine.evaluate(student(), Action.VOTE_CAST, foreign, env()).reason).toBe('membership.required');
+    expect(engine.evaluate(student(), Action.MESSAGE_READ, foreign, env()).reason).toBe('membership.required');
+    expect(engine.evaluate(student(), Action.POLL_CREATE, channel({ isMember: false, memberRole: undefined }), env()).reason).toBe(
+      'membership.required',
+    );
+  });
+
+  it('only moderators open votes in collegial bodies and broadcasts, but every member votes there', () => {
+    const council = channel({ channelType: ChannelType.GOVERNANCE });
+    expect(engine.evaluate(lecturer(), Action.POLL_CREATE, council, env()).reason).toBe('channel.not_moderator');
+    expect(engine.can(lecturer(), Action.POLL_CREATE, { ...council, memberRole: MemberRole.OWNER }, env())).toBe(true);
+    const ann = poll({ channelType: ChannelType.ANNOUNCEMENT });
+    expect(engine.can(student(), Action.VOTE_CAST, ann, env())).toBe(true);
+    expect(engine.can(student(), Action.POLL_CREATE, channel(), env())).toBe(true);
+  });
+
+  it('read-only members and archived channels cannot vote', () => {
+    expect(engine.evaluate(student(), Action.VOTE_CAST, poll({ memberRole: MemberRole.READ_ONLY }), env()).reason).toBe('channel.read_only');
+    expect(engine.evaluate(student(), Action.VOTE_CAST, poll({ archived: true }), env()).reason).toBe('channel.archived');
+  });
+
+  it('only the author or a moderator closes a poll', () => {
+    const me = student();
+    expect(engine.can(me, Action.POLL_MANAGE, poll({ ownerId: me.userId }), env())).toBe(true);
+    expect(engine.evaluate(me, Action.POLL_MANAGE, poll({ ownerId: 'someone-else' }), env()).reason).toBe('ownership.required');
+    expect(engine.can(me, Action.POLL_MANAGE, poll({ ownerId: 'someone-else', memberRole: MemberRole.MODERATOR }), env())).toBe(true);
+  });
+
+  it('resource confusion: vote actions need the right resource type', () => {
+    expect(engine.evaluate(student(), Action.VOTE_CAST, channel(), env()).reason).toBe('resource.type_mismatch');
+    expect(engine.evaluate(student(), Action.POLL_CREATE, poll(), env()).reason).toBe('resource.type_mismatch');
+    expect(engine.evaluate(student(), Action.MESSAGE_ACK, poll(), env()).reason).toBe('resource.type_mismatch');
+  });
+
+  it('directives: members confirm, outsiders cannot', () => {
+    const directive = channel({ type: ResourceType.MESSAGE, channelType: ChannelType.ANNOUNCEMENT });
+    expect(engine.can(student(), Action.MESSAGE_ACK, directive, env())).toBe(true);
+    expect(engine.evaluate(student(), Action.MESSAGE_ACK, { ...directive, isMember: false, memberRole: undefined }, env()).reason).toBe(
+      'membership.required',
+    );
+  });
+
+  it('guests vote only in guest spaces', () => {
+    const guest = principal({ kind: PrincipalKind.GUEST, roles: [{ role: RoleCode.GUEST, tenantId: T_MAIN }] });
+    expect(engine.can(guest, Action.VOTE_CAST, poll({ channelType: ChannelType.GUEST_SPACE }), env())).toBe(true);
+    expect(engine.evaluate(guest, Action.VOTE_CAST, poll(), env()).reason).toBe('guest.isolation');
+    expect(engine.can(guest, Action.POLL_CREATE, channel({ channelType: ChannelType.GUEST_SPACE }), env())).toBe(false);
+  });
+});

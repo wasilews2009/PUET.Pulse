@@ -4,6 +4,8 @@ import Redis from 'ioredis';
 import { AdminController } from './admin/admin.controller';
 import { ApprovalsController } from './approvals/approvals.controller';
 import { ApprovalsService } from './approvals/approvals.service';
+import { PollsController } from './polls/polls.controller';
+import { PollsService } from './polls/polls.service';
 import { AnnotationsService } from './files/annotations';
 import { FilesController } from './files/files.controller';
 import { FilesService } from './files/files.service';
@@ -75,6 +77,7 @@ export const REDIS = Symbol('REDIS');
     FilesController,
     PkiController,
     ApprovalsController,
+    PollsController,
     IntegrationsController,
     AdminController,
   ],
@@ -103,6 +106,7 @@ export const REDIS = Symbol('REDIS');
     PkiService,
     SignaturesService,
     ApprovalsService,
+    PollsService,
     VerificationService,
     MessagingService,
     NotificationService,

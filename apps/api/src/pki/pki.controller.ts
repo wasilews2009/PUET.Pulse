@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { AuthenticatedRequest } from '../auth/principal';
 import { Public } from '../auth/public.decorator';
 import { Authorize } from '../authz/authorize.decorator';
+import { binary } from '../common/binary';
 import { parse } from '../common/validation';
 import { readRawBody } from '../files/files.service';
 import { PkiService } from './pki.service';
@@ -22,13 +23,6 @@ const adminRevoke = z
   .strict();
 const qesBind = z.object({ challenge: z.string().min(10).max(300), signature: b64 }).strict();
 const code = z.string().regex(/^[A-Za-z0-9_-]{26}$/);
-
-function binary(res: Response, type: string, body: Buffer, cache = 'no-store') {
-  res.setHeader('Content-Type', type);
-  res.setHeader('Cache-Control', cache);
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.end(body);
-}
 
 /** Certificates (УЕП / КЕП), document signatures, verification protocol and the public PKI endpoints. */
 @Controller()

@@ -23,6 +23,8 @@ export const sendMessageInput = z
     scheme: z.enum(['MEGOLM', 'OLM']).optional(),
     senderDeviceId: z.string().uuid().optional(),
     threadRootId: z.string().uuid().optional(),
+    /** Directive: members confirm they have read it. Moderators only. */
+    requiresAck: z.boolean().optional(),
   })
   .strict()
   .refine((m) => (m.body === undefined) !== (m.ciphertext === undefined), {
