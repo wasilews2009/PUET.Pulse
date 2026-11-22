@@ -4,6 +4,7 @@ import type { Request, Response } from 'express';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { SessionAuthService } from '../session/session-auth.service';
 import { Authorize } from '../authz/authorize.decorator';
+import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from './auth.service';
 import type { AuthenticatedRequest } from './principal';
 import { Public } from './public.decorator';
@@ -14,6 +15,7 @@ export class AuthController {
     @Inject(AuthService) private readonly auth: AuthService,
     @Inject(SessionAuthService) private readonly sessions: SessionAuthService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
   @Public()
@@ -73,10 +75,21 @@ export class AuthController {
 
   @Get('me')
   @Authorize(Action.SESSION_READ, { type: ResourceType.SESSION })
-  me(@Req() req: AuthenticatedRequest) {
+  async me(@Req() req: AuthenticatedRequest) {
     const p = req.principal!;
+    // The caller's own name and locale for the UI (never a phone, e-mail or birth date).
+    const user = await this.prisma.user.findUnique({
+      where: { id: p.userId },
+      select: { fullNameUk: true, fullNameEn: true, corporateId: true, locale: true, tenant: { select: { code: true, themeOverrides: true } } },
+    });
     return {
       userId: p.userId,
+      fullNameUk: user?.fullNameUk ?? null,
+      fullNameEn: user?.fullNameEn ?? null,
+      corporateId: user?.corporateId ?? null,
+      locale: user?.locale ?? 'uk',
+      tenantCode: user?.tenant.code ?? null,
+      themeOverrides: user?.tenant.themeOverrides ?? null,
       tenantId: p.tenantId,
       kind: p.kind,
       isMinor: p.isMinor,

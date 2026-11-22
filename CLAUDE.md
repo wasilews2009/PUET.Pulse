@@ -98,14 +98,21 @@ apps/
     src/pki/           internal CA (CSR, CRL, OCSP), SignatureProvider, QES adapter,
                        signatures, verification protocol + QR
     src/approvals/     multi-step approval routes
+    src/directory/     profile cards, directory search (canSeeInDirectory per row)
     scripts/init-ca.ts one-time creation of the internal CA (keys outside the repo)
+  web/                 React 19 + Vite PWA client (served next to the API, /api prefix)
+    src/api/           fetch client, DTO types, React Query hooks, batched cards
+    src/features/      shell, chat, files (PDF.js viewer), signatures, approvals,
+                       settings, admin
+    src/i18n/          uk (default) and en dictionaries, same keys
+    src/theme/         PUET tokens, Light / Dark, sanitized white-label overrides
 packages/
   shared/              Domain vocabulary: tenants, roles, actions, channel types
   policy-engine/       Pure RBAC + ABAC policy decision point (no I/O)
   e2ee/                Client E2EE layer (vodozemac Olm/Megolm, backup, QR)
   signing/             Client УЕП: non-extractable WebCrypto keys, CSR, CAdES-BES (PKI.js)
   database/            Prisma schema, migrations, seed (PUET structure)
-infra/                 Postgres init, MinIO bucket bootstrap
+infra/                 Postgres init, MinIO bucket bootstrap, nginx example (TLS 1.3, CSP)
 assets/brand/          PUET logos (official SVG vectors, .ai source, raster originals)
 .claude/skills/        Design skills used for GUI work (Phase 5)
 docker-compose.yml     PostgreSQL, Redis, MinIO (+ init), ClamAV
@@ -238,6 +245,29 @@ the same rules. Evaluation order, first deny wins, default deny:
   public view omits the file name. A signature stays valid if its certificate
   was revoked after signing.
 
+**Web client rules (Phase 5)**
+
+- The client is never a security boundary: it mirrors server rules only to
+  hide controls that would be refused anyway. Every decision stays in the API.
+- Same origin as the API (`/api`, Socket.io at `/api/ws`). Fetches use
+  `credentials: 'same-origin'`; no tokens in JS, storage or URLs.
+- CSP-compatible: no inline scripts or `<style>` blocks, no `eval`, no
+  `dangerouslySetInnerHTML`. Message bodies render as text. SVG from the API
+  (QR) is shown only as an `<img>` data URL. Only `'wasm-unsafe-eval'` is
+  allowed, for vodozemac. Example proxy: `infra/nginx/pulse.conf`.
+- Plaintext of E2EE messages stays in memory (React Query cache); file bytes are
+  not cached (`gcTime 0`). The service worker caches only the app shell, never
+  `/api` or `/verify`.
+- PDF.js runs with `isEvalSupported: false`, `enableXfa: false`, no annotation
+  or text layer (canvas only). Confidential files are view-only: no download,
+  copy or print in the UI, plus the server watermark.
+- Signing keys are non-extractable WebCrypto keys in IndexedDB; only the CSR and
+  CMS signatures leave the device.
+- White-label overrides apply only the six brand variables with `#RRGGBB`
+  values (`theme/overrides.ts`). Login `returnTo` is a same-site relative path.
+- Directory cards never include phones or email; the phone has its own endpoint
+  (self and HR only). Hidden people are simply missing from card batches.
+
 ## 5. Organizational topology and data model
 
 - **Tenants:** `PUET_MAIN`, `PUET_LYCEUM` (strict minor protection),
@@ -307,7 +337,7 @@ section apply only to marketing pages, not to the messenger app.
   Redis sessions, signed sync webhooks (ЄДЕБО students, HR staff, ERP teaching
   load, offboarding), No-Code Admin Panel API (structure, bulk promotion,
   graduation to alumni, roles, permission matrix, ABAC policies, simulator,
-  audit log and chain verification). The visual panel is part of Phase 5.
+  audit log and chain verification). The visual panel came in Phase 5.
 - **Phase 3 (done):** real-time messaging (Socket.io + Redis), channel
   auto-provisioning, threads, DMs and groups, presence, Quiet Hours with
   morning digest (Redis), TTL purge, E2EE key directory and the vodozemac
@@ -316,8 +346,11 @@ section apply only to marketing pages, not to the messenger app.
   (watermarks, view-only DLP, JSON annotations), internal CA (CSR, CRL, OCSP) and
   `packages/signing`, `SignatureProvider` with the QES gateway adapter (OCSP +
   TSP), multi-step approval routes, verification protocol with QR and PDF.
-- **Phase 5:** React frontend with PUET tokens, Light / Dark, UA / EN, plus
-  security tests (IDOR, minor isolation, signature tampering).
+- **Phase 5 (done):** React frontend with PUET tokens, Light / Dark, UA / EN
+  (chats, threads, files, Secure PDF viewer with annotations, УЕП / КЕП signing,
+  approvals, verification page, settings, visual admin panel), directory API,
+  plus security tests (IDOR, minor isolation, signature tampering, XSS, CSS
+  injection, open redirect).
 
 Do one phase at a time and stop for the owner's confirmation between phases.
 

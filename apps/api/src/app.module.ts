@@ -48,6 +48,7 @@ import { SyncService } from './integrations/sync.service';
 import { MessagingController } from './messaging/messaging.controller';
 import { MessagingService } from './messaging/messaging.service';
 import { ProfileController } from './messaging/profile.controller';
+import { DirectoryController } from './directory/directory.controller';
 import { DIGEST_STORE, RedisDigestStore } from './notifications/digest.store';
 import { NotificationService } from './notifications/notification.service';
 import { POLICY_STORE, PolicyService, PrismaPolicyStore } from './policy/policy.service';
@@ -69,6 +70,7 @@ export const REDIS = Symbol('REDIS');
     ChannelsController,
     MessagingController,
     ProfileController,
+    DirectoryController,
     E2eeController,
     FilesController,
     PkiController,

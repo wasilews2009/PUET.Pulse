@@ -8,7 +8,7 @@ On-premise, zero-trust, multi-tenant.
 
 > Правила архітектури та безпеки: [CLAUDE.md](CLAUDE.md).
 
-## Стан: Фази 1–4 виконано
+## Стан: Фази 1–5 виконано
 
 | Що | Де |
 |---|---|
@@ -34,6 +34,12 @@ On-premise, zero-trust, multi-tenant.
 | Внутрішній ЦСК (УЕП): сертифікат з CSR, CRL, OCSP; адаптер КЕП через шлюз ІІТ з обов'язковими OCSP і TSP | `apps/api/src/pki` |
 | Клієнтський підпис: ключ не покидає пристрій, CSR, CAdES-BES | `packages/signing` |
 | Маршрути погодження, протокол перевірки підписів з QR-кодом і PDF | `apps/api/src/approvals`, `apps/api/src/pki` |
+| **Фаза 5.** Веб-клієнт (PWA): кольори та шрифти ПУЕТ, світла й темна теми, українська та англійська | `apps/web` |
+| Чати, гілки, особисті повідомлення, статуси, E2EE у браузері, файли, захищений переглядач PDF з нотатками | `apps/web/src/features/chat`, `apps/web/src/features/files` |
+| Підпис УЕП (ключ лише на пристрої) і КЕП (.p7s), маршрути погодження, публічна сторінка перевірки | `apps/web/src/features/signatures`, `apps/web/src/features/approvals` |
+| Візуальна адмін-панель: структура, ролі, матриця, політики, симулятор, журнал аудиту | `apps/web/src/features/admin` |
+| Довідник і картки людей з фільтром видимості для кожного рядка | `apps/api/src/directory` |
+| Приклад nginx: TLS 1.3, HSTS, суворий CSP, проксі `/api` і `/api/ws` | `infra/nginx/pulse.conf` |
 
 ## Швидкий старт
 
@@ -45,14 +51,17 @@ pnpm db:deploy                # міграції
 pnpm db:seed                  # тенанти та структура ПУЕТ
 pnpm build && pnpm test
 node apps/api/dist/main.js    # GET /health -> 200
+pnpm --filter @puet/web dev   # веб-клієнт на http://localhost:5173 (проксі /api -> :3000)
 ```
+
+У продакшені `apps/web/dist` віддає reverse proxy з того ж домену, що й API
+(приклад: `infra/nginx/pulse.conf`); `WEB_ORIGIN` має збігатися з цим доменом.
 
 Вхід: `GET /auth/login` перенаправляє на IdP (Keycloak), `GET /auth/callback`
 створює сесію лише для користувача, який уже є в БД (синхронізація ЄДЕБО / HR).
 Обхідного «dev-входу» немає навмисно. Налаштування IdP і клієнтів інтеграцій
 описано в `.env.example` (`OIDC_*`, `SESSION_*`, `INTEGRATION_CLIENTS`).
-Візуальна адмін-панель і месенджер з'являться у Фазі 5; зараз це API `/admin/*`,
-REST-маршрути месенджера, `/e2ee/*` і WebSocket `/ws`. Нові змінні Фази 3:
+Нові змінні Фази 3:
 `E2EE_SERVER_NAME`, `JOBS_ENABLED`; Фази 4: `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`,
 `FILE_MAX_MB`, `PKI_CA_*`, `PKI_PUBLIC_URL`, `VERIFY_CODE_SECRET`, `QES_GATEWAY_*`
 (див. `.env.example`). Після оновлення запустіть `pnpm db:deploy && pnpm db:seed`.
@@ -77,12 +86,16 @@ pnpm test
 - `apps/api`: 79 модульних тестів (guard-и HTTP і WebSocket, hash-ланцюг аудиту, MFA,
   open redirect, HMAC, вік неповнолітніх, сесії, конфігурація, «Тихі години», DST,
   CDR шкідливого PDF, ClamAV, ЦСК: CSR, підробка підпису, CRL, OCSP, адаптер КЕП)
-  і 46 наскрізних тестів на PostgreSQL: 18 Фази 2 (вхід, CSRF, вебхуки, офбординг,
+  і 54 наскрізні тести на PostgreSQL: 18 Фази 2 (вхід, CSRF, вебхуки, офбординг,
   адмін-панель), 15 Фази 3 (автоканали, гілки, IDOR, режими E2EE, DM, неповнолітні,
   TTL, «Тихі години», CSWSH, доставка через WebSocket, E2EE через API, офбординг)
   і 13 Фази 4 (карантин і CDR, вірус EICAR, недоступний сканер, IDOR файлів, DLP і
   водяний знак, анотації, сертифікати, підписи УЕП і КЕП, маршрути погодження,
-  протокол перевірки з QR):
+  протокол перевірки з QR), 8 Фази 5 (ізоляція неповнолітніх у довіднику й картках,
+  приховані телефони, IDOR анотацій, рішень погодження й сертифікатів, повтор підпису
+  на іншому документі, змінений біт, підміна файла в сховищі, незмінність підписів).
+- `apps/web`: 11 тестів (XSS у повідомленнях, CSS-ін'єкція через white-label,
+  open redirect після входу, правила публікації в каналах, однакові ключі UA / EN):
 
 ```bash
 RUN_DB_TESTS=1 DATABASE_URL=postgresql://... pnpm test
