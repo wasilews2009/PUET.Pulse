@@ -68,6 +68,17 @@ const MODERATED_POLL_CHANNELS: ReadonlySet<string> = new Set([
   ChannelType.GOVERNANCE,
 ]);
 
+/**
+ * Channel types where only OWNER/MODERATOR may start a call: broadcasts, collegial bodies
+ * (an online meeting is opened by its secretary or chair) and course channels (the lecturer).
+ */
+const MODERATED_CALL_CHANNELS: ReadonlySet<string> = new Set([
+  ChannelType.ANNOUNCEMENT,
+  ChannelType.EMERGENCY,
+  ChannelType.GOVERNANCE,
+  ChannelType.COURSE,
+]);
+
 /** Roles whose grants let them oversee non-private channels inside their scope. */
 const OVERSIGHT_ROLES: ReadonlySet<string> = new Set([
   RoleCode.SUPER_ADMIN,
@@ -89,6 +100,7 @@ const CHANNEL_SCOPED_RESOURCES: ReadonlySet<string> = new Set([
   ResourceType.FILE,
   ResourceType.DOCUMENT,
   ResourceType.VOTE,
+  ResourceType.CALL,
 ]);
 
 export interface PolicyEngineOptions {
@@ -291,6 +303,9 @@ export class PolicyEngine {
       if (channel) return channel;
     }
 
+    const consultation = this.consultationGuardrails(principal, action, resource);
+    if (consultation !== undefined) return consultation;
+
     switch (action) {
       case Action.DM_START: {
         if (!resource.target) return deny('dm.target_required');
@@ -328,6 +343,45 @@ export class PolicyEngine {
       }
       default:
         return null;
+    }
+  }
+
+  /**
+   * Consultation slots. Returns undefined when the action is not about consultations.
+   * Booking follows the DM rules towards the host (a student books a lecturer only with a shared
+   * course this semester, minors stay inside their tenant, nobody books the Rectorate).
+   */
+  private consultationGuardrails(principal: Principal, action: Action, resource: Resource): Decision | null | undefined {
+    if (action === Action.CONSULTATION_HOST) {
+      if (resource.type !== ResourceType.SELF) return deny('resource.type_mismatch');
+      return principal.kind === PrincipalKind.STAFF ? null : deny('consultation.staff_only');
+    }
+    if (action === Action.CONSULTATION_BOOK && resource.type === ResourceType.SELF) return null;
+    if (resource.type !== ResourceType.CONSULTATION) {
+      return action === Action.CONSULTATION_BOOK || action === Action.CONSULTATION_MANAGE
+        ? deny('resource.type_mismatch')
+        : undefined;
+    }
+    const isHost = resource.ownerId !== undefined && resource.ownerId === principal.userId;
+    switch (action) {
+      case Action.CONSULTATION_MANAGE:
+        return isHost ? null : deny('ownership.required');
+      case Action.CONSULTATION_BOOK: {
+        if (isHost) return deny('consultation.own_slot');
+        // Holding a booking: the student may always see and cancel it.
+        if (resource.isBooked) return null;
+        if (!resource.target) return deny('consultation.host_required');
+        const reason = checkDirectMessage(principal, resource.target);
+        if (reason) return deny(reason);
+        if (resource.courseOfferingId && !principal.activeCourseOfferingIds.includes(resource.courseOfferingId)) {
+          return deny('consultation.course_only');
+        }
+        return null;
+      }
+      case Action.CALL_JOIN:
+        return isHost || resource.isBooked ? null : deny('membership.required');
+      default:
+        return deny('resource.type_mismatch');
     }
   }
 
@@ -458,6 +512,32 @@ export class PolicyEngine {
     if (action === Action.MESSAGE_ACK) {
       if (resource.type !== ResourceType.MESSAGE) return deny('resource.type_mismatch');
       return resource.isMember ? null : deny('membership.required');
+    }
+
+    // Phase 7. Calls: media travels through the on-premise SFU, so rooms whose content must be
+    // end-to-end encrypted get no calls until media E2EE is designed (like attachments).
+    if (action === Action.CALL_START) {
+      if (resource.type !== ResourceType.CHANNEL) return deny('resource.type_mismatch');
+      if (!resource.isMember) return deny('membership.required');
+      if (resource.archived) return deny('channel.archived');
+      if (resource.memberRole === MemberRole.READ_ONLY) return deny('channel.read_only');
+      if (resource.e2eeMode === E2eeMode.MANDATORY) return deny('call.e2ee_unavailable');
+      if (resource.channelType && MODERATED_CALL_CHANNELS.has(resource.channelType) && !isModerator) {
+        return deny('channel.not_moderator');
+      }
+      return null;
+    }
+
+    if (action === Action.CALL_JOIN || action === Action.CALL_MANAGE) {
+      if (resource.type !== ResourceType.CALL) return deny('resource.type_mismatch');
+      // Channel calls: channel members. Consultation calls: the host and booked students.
+      if (!resource.isMember) return deny('membership.required');
+      if (resource.archived) return deny('channel.archived');
+      if (resource.e2eeMode === E2eeMode.MANDATORY) return deny('call.e2ee_unavailable');
+      if (action === Action.CALL_MANAGE && resource.ownerId !== principal.userId && !isModerator) {
+        return deny('ownership.required');
+      }
+      return null;
     }
 
     // Only an approver named on the file's route decides; channel membership is not enough.

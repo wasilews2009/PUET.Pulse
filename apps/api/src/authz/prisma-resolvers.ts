@@ -47,7 +47,7 @@ const opt = <K extends string, V>(key: K, value: V | null | undefined) =>
 /** Channels, messages, files: membership is computed for the calling principal. */
 @Injectable()
 export class ChannelScopedResolver implements ResourceResolver {
-  readonly types = [ResourceType.CHANNEL, ResourceType.MESSAGE, ResourceType.FILE, ResourceType.VOTE] as const;
+  readonly types = [ResourceType.CHANNEL, ResourceType.MESSAGE, ResourceType.FILE, ResourceType.VOTE, ResourceType.CALL] as const;
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
@@ -67,6 +67,32 @@ export class ChannelScopedResolver implements ResourceResolver {
       if (!msg || msg.deletedAt) return null;
       channel = msg.channel;
       ownerId = msg.senderId;
+    } else if (type === ResourceType.CALL) {
+      const call = await this.prisma.call.findUnique({
+        where: { id },
+        select: {
+          tenantId: true,
+          startedById: true,
+          slot: { select: { id: true, tenantId: true, hostId: true, status: true } },
+          message: { select: { deletedAt: true } },
+          channel: { select: channelSelect },
+        },
+      });
+      if (!call) return null;
+      if (call.slot) {
+        // Consultation room: the host and the students holding a live booking.
+        if (call.slot.tenantId !== call.tenantId) return null;
+        const booked = await this.prisma.consultationBooking.count({
+          where: { slotId: call.slot.id, studentId: principal.userId, status: 'BOOKED' },
+        });
+        const isHost = call.slot.hostId === principal.userId;
+        // A cancelled slot has no room for anybody.
+        const member = call.slot.status === 'ACTIVE' && (isHost || booked > 0);
+        return { type, id, tenantId: call.tenantId, ownerId: call.slot.hostId, isMember: member };
+      }
+      if (!call.channel || call.channel.tenantId !== call.tenantId || call.message?.deletedAt) return null;
+      channel = call.channel;
+      ownerId = call.startedById;
     } else if (type === ResourceType.VOTE) {
       const poll = await this.prisma.poll.findUnique({
         where: { id },
@@ -117,6 +143,40 @@ export class ChannelScopedResolver implements ResourceResolver {
       ...opt('orgUnitId', channel.orgUnitId),
       ...opt('dormitoryId', channel.dormitoryId),
       ...opt('courseOfferingId', channel.courseOfferingId),
+    };
+  }
+}
+
+/**
+ * A consultation slot. The host is the owner; whether the caller holds a live booking is
+ * computed here; the host's facts let the policy engine apply the DM rules to booking.
+ */
+@Injectable()
+export class ConsultationResolver implements ResourceResolver {
+  readonly types = [ResourceType.CONSULTATION] as const;
+
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+
+  async resolve(type: ResourceType, id: string | undefined, principal: Principal): Promise<Resource | null> {
+    if (!id) return null;
+    const slot = await this.prisma.consultationSlot.findUnique({
+      where: { id },
+      select: { tenantId: true, hostId: true, courseOfferingId: true },
+    });
+    if (!slot) return null;
+    const host = await loadTargetFacts(this.prisma, slot.hostId);
+    if (!host || host.tenantId !== slot.tenantId) return null;
+    const booked = await this.prisma.consultationBooking.count({
+      where: { slotId: id, studentId: principal.userId, status: 'BOOKED' },
+    });
+    return {
+      type,
+      id,
+      tenantId: slot.tenantId,
+      ownerId: slot.hostId,
+      target: host,
+      ...(booked > 0 ? { isBooked: true } : {}),
+      ...opt('courseOfferingId', slot.courseOfferingId),
     };
   }
 }

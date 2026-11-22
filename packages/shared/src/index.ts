@@ -169,6 +169,18 @@ export const Action = {
   POLL_MANAGE: 'poll.manage',
   /** Phase 6: confirm a directive («Ознайомлений»). */
   MESSAGE_ACK: 'message.ack',
+  /** Phase 7: start a WebRTC call in a channel. */
+  CALL_START: 'call.start',
+  /** Phase 7: get a LiveKit join token for a call or for one's consultation room. */
+  CALL_JOIN: 'call.join',
+  /** Phase 7: end a call (its starter, the consultation host or a channel moderator). */
+  CALL_MANAGE: 'call.manage',
+  /** Phase 7: publish consultation slots («графік консультацій»). */
+  CONSULTATION_HOST: 'consultation.host',
+  /** Phase 7: book (or cancel one's booking of) a consultation slot; list one's own bookings. */
+  CONSULTATION_BOOK: 'consultation.book',
+  /** Phase 7: cancel one's own slot and see who booked it. */
+  CONSULTATION_MANAGE: 'consultation.manage',
 } as const;
 export type Action = (typeof Action)[keyof typeof Action];
 
@@ -190,6 +202,10 @@ export const ResourceType = {
   /** The caller's own account settings (always owned by the caller). */
   SELF: 'self',
   DEVICE: 'device',
+  /** Phase 7: a WebRTC call (in a channel or a consultation room). */
+  CALL: 'call',
+  /** Phase 7: a consultation slot of a lecturer. */
+  CONSULTATION: 'consultation',
 } as const;
 
 /** Roles the ЄДЕБО / HR sync may grant. RECTORATE and SUPER_ADMIN are granted only by an administrator. */

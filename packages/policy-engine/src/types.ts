@@ -77,6 +77,8 @@ export interface Resource {
   memberRole?: MemberRole;
   /** Whether the principal is an approver on an approval route of this file (computed server-side). */
   isApprover?: boolean;
+  /** Consultation slots: whether the principal holds a live booking (computed server-side). */
+  isBooked?: boolean;
   channelType?: ChannelType;
   e2eeMode?: E2eeMode;
   confidential?: boolean;

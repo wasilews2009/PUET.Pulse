@@ -9,7 +9,7 @@ import {
   ResourceType,
   RoleCode,
 } from '@puet/shared';
-import { PolicyEngine, canSeeInDirectory, evaluateCondition, validateCondition } from '../src';
+import { PolicyEngine, canSeeInDirectory, evaluateCondition, validateCondition, type Resource } from '../src';
 import {
   DEPT_CS,
   DEPT_LAW,
@@ -524,5 +524,107 @@ describe('polls, formal votes and directives (Phase 6)', () => {
     expect(engine.can(guest, Action.VOTE_CAST, poll({ channelType: ChannelType.GUEST_SPACE }), env())).toBe(true);
     expect(engine.evaluate(guest, Action.VOTE_CAST, poll(), env()).reason).toBe('guest.isolation');
     expect(engine.can(guest, Action.POLL_CREATE, channel({ channelType: ChannelType.GUEST_SPACE }), env())).toBe(false);
+  });
+});
+
+describe('calls and consultations (Phase 7)', () => {
+  const host = target({
+    userId: 'u-lecturer',
+    kind: PrincipalKind.STAFF,
+    roles: [RoleCode.LECTURER],
+    activeCourseOfferingIds: ['co-algorithms'],
+  });
+  const slot = (over: Partial<Resource> = {}): Resource => ({
+    type: ResourceType.CONSULTATION,
+    id: 'slot-1',
+    tenantId: T_MAIN,
+    ownerId: 'u-lecturer',
+    target: host,
+    ...over,
+  });
+  const call = (over: Partial<Resource> = {}): Resource => ({ ...channel(), type: ResourceType.CALL, ownerId: 'u-lecturer', ...over });
+
+  it('course channels: only the lecturer (moderator) starts a call; members join', () => {
+    expect(engine.evaluate(student(), Action.CALL_START, channel(), env()).reason).toBe('channel.not_moderator');
+    expect(engine.can(lecturer(), Action.CALL_START, channel({ memberRole: MemberRole.MODERATOR }), env())).toBe(true);
+    expect(engine.can(student(), Action.CALL_JOIN, call(), env())).toBe(true);
+    const group = channel({ channelType: ChannelType.ACADEMIC_GROUP });
+    expect(engine.can(student(), Action.CALL_START, group, env())).toBe(true);
+  });
+
+  it('IDOR: a non-member cannot get a join token for a call by id', () => {
+    const foreign = call({ isMember: false, memberRole: undefined });
+    expect(engine.evaluate(student(), Action.CALL_JOIN, foreign, env()).reason).toBe('membership.required');
+  });
+
+  it('no calls in rooms with mandatory E2EE (the SFU would see the media)', () => {
+    const trust = channel({ channelType: ChannelType.TRUST_ROOM, e2eeMode: E2eeMode.MANDATORY });
+    expect(engine.evaluate(student(), Action.CALL_START, trust, env()).reason).toBe('call.e2ee_unavailable');
+    expect(engine.evaluate(student(), Action.CALL_JOIN, call({ channelType: ChannelType.TRUST_ROOM, e2eeMode: E2eeMode.MANDATORY }), env()).reason).toBe(
+      'call.e2ee_unavailable',
+    );
+  });
+
+  it('read-only members cannot start calls; archived channels have none', () => {
+    const ro = channel({ channelType: ChannelType.ACADEMIC_GROUP, memberRole: MemberRole.READ_ONLY });
+    expect(engine.evaluate(student(), Action.CALL_START, ro, env()).reason).toBe('channel.read_only');
+    expect(engine.evaluate(student(), Action.CALL_JOIN, call({ archived: true }), env()).reason).toBe('channel.archived');
+  });
+
+  it('only the starter or a moderator ends a call', () => {
+    expect(engine.evaluate(student(), Action.CALL_MANAGE, call(), env()).reason).toBe('ownership.required');
+    expect(engine.can(student(), Action.CALL_MANAGE, call({ ownerId: 'u-student' }), env())).toBe(true);
+    expect(engine.can(lecturer(), Action.CALL_MANAGE, call({ memberRole: MemberRole.MODERATOR }), env())).toBe(true);
+  });
+
+  it('guests join calls only in guest spaces and never start them', () => {
+    const guest = principal({ userId: 'u-guest', kind: PrincipalKind.GUEST, roles: [{ role: RoleCode.GUEST, tenantId: T_MAIN }] });
+    const space = { channelType: ChannelType.GUEST_SPACE };
+    expect(engine.can(guest, Action.CALL_JOIN, call(space), env())).toBe(true);
+    expect(engine.evaluate(guest, Action.CALL_JOIN, call(), env()).reason).toBe('guest.isolation');
+    expect(engine.can(guest, Action.CALL_START, channel(space), env())).toBe(false);
+    expect(engine.can(guest, Action.CONSULTATION_BOOK, slot(), env())).toBe(false);
+  });
+
+  it('only teaching staff publish consultation slots', () => {
+    const self = (userId: string) => ({ type: ResourceType.SELF, tenantId: T_MAIN, ownerId: userId });
+    expect(engine.can(lecturer(), Action.CONSULTATION_HOST, self('u-lecturer'), env())).toBe(true);
+    expect(engine.evaluate(student(), Action.CONSULTATION_HOST, self('u-student'), env()).reason).toBe('rbac.denied');
+    const hr = principal({ userId: 'u-hr', kind: PrincipalKind.STAFF, roles: [{ role: RoleCode.FACILITIES_STAFF, tenantId: T_MAIN }] });
+    expect(engine.can(hr, Action.CONSULTATION_HOST, self('u-hr'), env())).toBe(false);
+  });
+
+  it('booking follows the DM rules: a shared course is required for a lecturer', () => {
+    expect(engine.can(student(), Action.CONSULTATION_BOOK, slot(), env())).toBe(true);
+    const stranger = student({ activeCourseOfferingIds: ['co-civil-law'] });
+    expect(engine.evaluate(stranger, Action.CONSULTATION_BOOK, slot(), env()).reason).toBe('dm.no_shared_course');
+    const rector = slot({ ownerId: 'u-rector', target: target({ userId: 'u-rector', kind: PrincipalKind.STAFF, roles: [RoleCode.RECTORATE] }) });
+    expect(engine.evaluate(student(), Action.CONSULTATION_BOOK, rector, env()).reason).toBe('dm.student_to_rectorate');
+  });
+
+  it('minor isolation: a lyceum pupil cannot book a university lecturer', () => {
+    expect(engine.can(lyceumPupil(), Action.CONSULTATION_BOOK, slot(), env())).toBe(false);
+  });
+
+  it('a slot limited to a course accepts only its students; the host cannot book their own slot', () => {
+    const limited = slot({ courseOfferingId: 'co-databases', target: { ...host, activeCourseOfferingIds: ['co-algorithms', 'co-databases'] } });
+    expect(engine.evaluate(student(), Action.CONSULTATION_BOOK, limited, env()).reason).toBe('consultation.course_only');
+    expect(engine.can(student({ activeCourseOfferingIds: ['co-databases'] }), Action.CONSULTATION_BOOK, limited, env())).toBe(true);
+    expect(engine.evaluate(lecturer(), Action.CONSULTATION_BOOK, slot(), env()).reason).toBe('consultation.own_slot');
+  });
+
+  it('IDOR: only the host manages a slot; only the host and booked students enter its room', () => {
+    expect(engine.evaluate(student(), Action.CONSULTATION_MANAGE, slot(), env()).reason).toBe('rbac.denied');
+    const other = lecturer({ userId: 'u-other-lecturer' });
+    expect(engine.evaluate(other, Action.CONSULTATION_MANAGE, slot(), env()).reason).toBe('ownership.required');
+    expect(engine.can(lecturer(), Action.CONSULTATION_MANAGE, slot(), env())).toBe(true);
+    expect(engine.evaluate(student(), Action.CALL_JOIN, slot(), env()).reason).toBe('membership.required');
+    expect(engine.can(student(), Action.CALL_JOIN, slot({ isBooked: true }), env())).toBe(true);
+    expect(engine.can(lecturer(), Action.CALL_JOIN, slot(), env())).toBe(true);
+  });
+
+  it('a student keeps access to their own booking after the course ends (to cancel it)', () => {
+    const later = student({ activeCourseOfferingIds: [] });
+    expect(engine.can(later, Action.CONSULTATION_BOOK, slot({ isBooked: true }), env())).toBe(true);
   });
 });

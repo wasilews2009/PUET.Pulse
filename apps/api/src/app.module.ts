@@ -4,6 +4,11 @@ import Redis from 'ioredis';
 import { AdminController } from './admin/admin.controller';
 import { ApprovalsController } from './approvals/approvals.controller';
 import { ApprovalsService } from './approvals/approvals.service';
+import { CallsController } from './calls/calls.controller';
+import { CallsService } from './calls/calls.service';
+import { DisabledMediaServer, LiveKitMediaServer, MEDIA_SERVER } from './calls/media-server';
+import { ConsultationsController } from './consultations/consultations.controller';
+import { ConsultationsService } from './consultations/consultations.service';
 import { PollsController } from './polls/polls.controller';
 import { PollsService } from './polls/polls.service';
 import { AnnotationsService } from './files/annotations';
@@ -33,6 +38,7 @@ import { PrincipalFactory } from './auth/principal.factory';
 import { PolicyGuard } from './authz/policy.guard';
 import {
   ChannelScopedResolver,
+  ConsultationResolver,
   DeviceResolver,
   SelfResolver,
   TenantResourceResolver,
@@ -78,6 +84,8 @@ export const REDIS = Symbol('REDIS');
     PkiController,
     ApprovalsController,
     PollsController,
+    CallsController,
+    ConsultationsController,
     IntegrationsController,
     AdminController,
   ],
@@ -107,6 +115,13 @@ export const REDIS = Symbol('REDIS');
     SignaturesService,
     ApprovalsService,
     PollsService,
+    CallsService,
+    ConsultationsService,
+    {
+      provide: MEDIA_SERVER,
+      inject: [APP_CONFIG],
+      useFactory: (cfg: AppConfig) => (cfg.livekit ? new LiveKitMediaServer(cfg.livekit) : new DisabledMediaServer()),
+    },
     VerificationService,
     MessagingService,
     NotificationService,
@@ -130,10 +145,11 @@ export const REDIS = Symbol('REDIS');
     TenantResourceResolver,
     SelfResolver,
     DeviceResolver,
+    ConsultationResolver,
     {
       provide: RESOURCE_RESOLVERS,
       useFactory: (...resolvers: unknown[]) => resolvers,
-      inject: [ChannelScopedResolver, UserTargetResolver, TenantResourceResolver, SelfResolver, DeviceResolver],
+      inject: [ChannelScopedResolver, UserTargetResolver, TenantResourceResolver, SelfResolver, DeviceResolver, ConsultationResolver],
     },
     // Order matters: authenticate first, then authorize. Both apply to every route.
     { provide: APP_GUARD, useClass: AuthenticationGuard },
@@ -144,10 +160,10 @@ export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     // Machine-to-machine webhooks: HMAC only, cookies are never read.
     consumer.apply(IntegrationAuthMiddleware).forRoutes({ path: 'integrations/*path', method: RequestMethod.ALL });
-    // Everything else: session cookie + CSRF origin check.
+    // Everything else: session cookie + CSRF origin check. The SFU's webhook is signed, cookie-less.
     consumer
       .apply(SessionMiddleware)
-      .exclude({ path: 'integrations/*path', method: RequestMethod.ALL })
+      .exclude({ path: 'integrations/*path', method: RequestMethod.ALL }, { path: 'calls/livekit/webhook', method: RequestMethod.POST })
       .forRoutes({ path: '*path', method: RequestMethod.ALL });
   }
 }

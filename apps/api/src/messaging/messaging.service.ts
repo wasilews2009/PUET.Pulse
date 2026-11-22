@@ -26,6 +26,7 @@ export const messageSelect = {
   expiresAt: true,
   deletedAt: true,
   poll: { select: { id: true } },
+  call: { select: { id: true } },
 } as const;
 type MessageRow = Prisma.MessageGetPayload<{ select: typeof messageSelect }>;
 
@@ -44,6 +45,8 @@ export interface MessageDto {
   requiresAck: boolean;
   /** The poll this message shows, if any. */
   pollId: string | null;
+  /** The call this message shows, if any (Phase 7). */
+  callId: string | null;
   createdAt: string;
   editedAt: string | null;
   expiresAt: string | null;
@@ -63,6 +66,7 @@ export function toDto(m: MessageRow): MessageDto {
     isPriority: m.isPriority,
     requiresAck: m.requiresAck,
     pollId: m.poll?.id ?? null,
+    callId: m.call?.id ?? null,
     createdAt: m.createdAt.toISOString(),
     editedAt: m.editedAt?.toISOString() ?? null,
     expiresAt: m.expiresAt?.toISOString() ?? null,

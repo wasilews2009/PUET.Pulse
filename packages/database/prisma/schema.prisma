@@ -444,13 +444,14 @@ model CourseOffering {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  tenant     Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  semester   Semester                 @relation(fields: [semesterId], references: [id], onDelete: Restrict)
-  discipline Discipline               @relation(fields: [disciplineId], references: [id], onDelete: Restrict)
-  department Department               @relation(fields: [departmentId], references: [id], onDelete: Restrict)
-  lecturers  CourseOfferingLecturer[]
-  groups     CourseOfferingGroup[]
-  channel    Channel?
+  tenant            Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  semester          Semester                 @relation(fields: [semesterId], references: [id], onDelete: Restrict)
+  discipline        Discipline               @relation(fields: [disciplineId], references: [id], onDelete: Restrict)
+  department        Department               @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  lecturers         CourseOfferingLecturer[]
+  groups            CourseOfferingGroup[]
+  channel           Channel?
+  consultationSlots ConsultationSlot[]
 
   @@unique([tenantId, externalId])
   @@index([tenantId, semesterId])
@@ -514,29 +515,33 @@ model User {
   createdAt     DateTime       @default(now()) @map("created_at")
   updatedAt     DateTime       @updatedAt @map("updated_at")
 
-  tenant           Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  tenant           Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   staffProfile     StaffProfile?
   studentProfile   StudentProfile?
-  roleAssignments  RoleAssignment[]    @relation("RoleAssignee")
-  grantedRoles     RoleAssignment[]    @relation("RoleGrantor")
+  roleAssignments  RoleAssignment[]      @relation("RoleAssignee")
+  grantedRoles     RoleAssignment[]      @relation("RoleGrantor")
   memberships      ChannelMember[]
   messages         Message[]
   files            FileObject[]
   quietHours       QuietHoursSchedule?
   certificates     UserCertificate[]
   approvalSteps    ApprovalStep[]
-  approvalRoutes   ApprovalRoute[]     @relation("ApprovalRouteCreator")
-  signatures       DocumentSignature[] @relation("DocumentSigner")
-  annotations      PdfAnnotation[]     @relation("AnnotationAuthor")
+  approvalRoutes   ApprovalRoute[]       @relation("ApprovalRouteCreator")
+  signatures       DocumentSignature[]   @relation("DocumentSigner")
+  annotations      PdfAnnotation[]       @relation("AnnotationAuthor")
   devices          Device[]
   crossSigningKeys CrossSigningKey[]
   keyBackups       KeyBackupVersion[]
   secrets          UserSecret[]
-  polls            Poll[]              @relation("PollCreator")
+  polls            Poll[]                @relation("PollCreator")
   pollVotes        PollParticipation[]
   pollBallots      PollBallot[]
   pollEligibility  PollEligible[]
   messageAcks      MessageAck[]
+  callsStarted     Call[]                @relation("CallStarter")
+  callsJoined      CallParticipant[]
+  hostedSlots      ConsultationSlot[]    @relation("ConsultationHost")
+  bookings         ConsultationBooking[]
 
   @@index([tenantId, status])
   @@index([tenantId, kind])
@@ -550,6 +555,7 @@ model StaffProfile {
   academicDegree       String?  @map("academic_degree")
   academicTitle        String?  @map("academic_title")
   position             String
+  /// Legacy free-form schedule from HR; Phase 7 slots (consultation_slots) supersede it.
   consultationSchedule Json?    @map("consultation_schedule")
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
@@ -836,6 +842,7 @@ model Channel {
   messages       Message[]
   files          FileObject[]
   polls          Poll[]
+  calls          Call[]
 
   @@index([tenantId, type])
   @@map("channels")
@@ -889,6 +896,7 @@ model Message {
   attachments FileObject[]
   poll        Poll?
   acks        MessageAck[]
+  call        Call?
 
   @@unique([senderId, clientMessageId])
   @@index([channelId, createdAt])
@@ -1239,4 +1247,118 @@ model MessageAck {
 
   @@id([messageId, userId])
   @@map("message_acks")
+}
+
+// ───────────────────────────── Phase 7: calls and consultations ─────────────────────────────
+
+/// CHANNEL: a call started in a channel (shown in its timeline).
+/// CONSULTATION: the online room of one consultation slot (host + booked students).
+enum CallKind {
+  CHANNEL
+  CONSULTATION
+}
+
+enum ConsultationMode {
+  ONLINE
+  OFFLINE
+}
+
+enum ConsultationSlotStatus {
+  ACTIVE
+  CANCELLED
+}
+
+enum ConsultationBookingStatus {
+  BOOKED
+  CANCELLED
+}
+
+/// A WebRTC room on the LiveKit SFU. Media never passes through the API; the API only issues
+/// short-lived join tokens to people the policy engine allows, and removes them when that changes.
+model Call {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  kind        CallKind
+  channelId   String?   @map("channel_id") @db.Uuid
+  slotId      String?   @map("slot_id") @db.Uuid
+  /// CHANNEL calls: the timeline message that shows the call.
+  messageId   String?   @unique @map("message_id") @db.Uuid
+  startedById String    @map("started_by_id") @db.Uuid
+  /// LiveKit room name: "pulse-<random>", never derived from names.
+  roomName    String    @unique @map("room_name")
+  startedAt   DateTime  @default(now()) @map("started_at")
+  endedAt     DateTime? @map("ended_at")
+  endedById   String?   @map("ended_by_id") @db.Uuid
+
+  channel      Channel?          @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  slot         ConsultationSlot? @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  message      Message?          @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  startedBy    User              @relation("CallStarter", fields: [startedById], references: [id], onDelete: Restrict)
+  participants CallParticipant[]
+
+  @@index([channelId, startedAt])
+  @@index([slotId])
+  @@index([endedAt])
+  @@map("calls")
+}
+
+/// Who joined a call (from LiveKit webhooks). No media, no content.
+model CallParticipant {
+  callId        String   @map("call_id") @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  firstJoinedAt DateTime @default(now()) @map("first_joined_at")
+  lastJoinedAt  DateTime @default(now()) @map("last_joined_at")
+
+  call Call @relation(fields: [callId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([callId, userId])
+  @@map("call_participants")
+}
+
+/// «Графік консультацій»: a time a lecturer is available, online (LiveKit room) or in person.
+model ConsultationSlot {
+  id               String                 @id @default(uuid()) @db.Uuid
+  tenantId         String                 @map("tenant_id") @db.Uuid
+  hostId           String                 @map("host_id") @db.Uuid
+  startsAt         DateTime               @map("starts_at")
+  endsAt           DateTime               @map("ends_at")
+  capacity         Int                    @default(1)
+  mode             ConsultationMode
+  /// OFFLINE: auditorium or office, e.g. «ауд. 312, корп. 2».
+  location         String?
+  /// Optional: only students of this course offering may book.
+  courseOfferingId String?                @map("course_offering_id") @db.Uuid
+  note             String?
+  status           ConsultationSlotStatus @default(ACTIVE)
+  cancelledAt      DateTime?              @map("cancelled_at")
+  createdAt        DateTime               @default(now()) @map("created_at")
+
+  host           User                  @relation("ConsultationHost", fields: [hostId], references: [id], onDelete: Restrict)
+  courseOffering CourseOffering?       @relation(fields: [courseOfferingId], references: [id], onDelete: SetNull)
+  bookings       ConsultationBooking[]
+  calls          Call[]
+
+  @@index([hostId, startsAt])
+  @@index([tenantId, startsAt])
+  @@map("consultation_slots")
+}
+
+/// A student's place in a slot. One live booking per person and slot (partial unique index).
+model ConsultationBooking {
+  id          String                    @id @default(uuid()) @db.Uuid
+  slotId      String                    @map("slot_id") @db.Uuid
+  studentId   String                    @map("student_id") @db.Uuid
+  /// What the student wants to discuss; visible to the host only.
+  topic       String?
+  status      ConsultationBookingStatus @default(BOOKED)
+  createdAt   DateTime                  @default(now()) @map("created_at")
+  cancelledAt DateTime?                 @map("cancelled_at")
+
+  slot    ConsultationSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  student User             @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@index([slotId, status])
+  @@index([studentId, status])
+  @@map("consultation_bookings")
 }

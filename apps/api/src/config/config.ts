@@ -77,6 +77,13 @@ const schema = z.object({
   /** On-premise QES gateway (IIT EUSignCP server) for КЕП. Unset: QES signing is unavailable. */
   QES_GATEWAY_URL: optional(z.string().url()),
   QES_GATEWAY_TOKEN: optional(z.string().min(16)),
+  // ── Phase 7: WebRTC calls (LiveKit SFU, on-premise) ──
+  /** Server API URL of LiveKit (http(s)://, internal network). Unset: calls are unavailable. */
+  LIVEKIT_URL: optional(z.string().url()),
+  /** URL browsers connect to (wss://). Default: LIVEKIT_URL with ws(s)://. */
+  LIVEKIT_PUBLIC_URL: optional(z.string().url()),
+  LIVEKIT_API_KEY: optional(z.string().min(3)),
+  LIVEKIT_API_SECRET: optional(z.string().min(32)),
 });
 
 export interface AppConfig {
@@ -111,6 +118,7 @@ export interface AppConfig {
     verifyCodeSecret?: string;
     qes: { url: string; token: string } | null;
   };
+  livekit: { url: string; publicUrl: string; apiKey: string; apiSecret: string } | null;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -171,5 +179,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       ...(e.VERIFY_CODE_SECRET ? { verifyCodeSecret: e.VERIFY_CODE_SECRET } : {}),
       qes: e.QES_GATEWAY_URL && e.QES_GATEWAY_TOKEN ? { url: e.QES_GATEWAY_URL, token: e.QES_GATEWAY_TOKEN } : null,
     },
+    livekit:
+      e.LIVEKIT_URL && e.LIVEKIT_API_KEY && e.LIVEKIT_API_SECRET
+        ? {
+            url: e.LIVEKIT_URL,
+            publicUrl: e.LIVEKIT_PUBLIC_URL ?? e.LIVEKIT_URL.replace(/^http/, 'ws'),
+            apiKey: e.LIVEKIT_API_KEY,
+            apiSecret: e.LIVEKIT_API_SECRET,
+          }
+        : null,
   };
 }
