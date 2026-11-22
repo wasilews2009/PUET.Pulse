@@ -23,7 +23,7 @@ const integrationClient = z.object({
   /** HMAC-SHA256 shared secret, at least 32 characters. */
   secret: z.string().min(32),
   tenantCode: z.nativeEnum(TenantCode),
-  kinds: z.array(z.enum(['EDEBO_STUDENTS', 'HR_STAFF', 'TEACHING_LOAD', 'OFFBOARDING'])).min(1),
+  kinds: z.array(z.enum(['EDEBO_STUDENTS', 'HR_STAFF', 'TEACHING_LOAD', 'OFFBOARDING', 'DEANERY', 'SCHEDULE', 'EDO'])).min(1),
 });
 export type IntegrationClientConfig = z.infer<typeof integrationClient> & { clientId: string };
 
@@ -84,6 +84,21 @@ const schema = z.object({
   LIVEKIT_PUBLIC_URL: optional(z.string().url()),
   LIVEKIT_API_KEY: optional(z.string().min(3)),
   LIVEKIT_API_SECRET: optional(z.string().min(32)),
+  // ── Phase 8: corporate bots ──
+  /** Outbound signed webhooks to the deanery system and the ЕДО (empty URL = not sent, kept in the outbox). */
+  OUTBOX_DEANERY_URL: optional(z.string().url()),
+  OUTBOX_DEANERY_SECRET: optional(z.string().min(32)),
+  OUTBOX_EDO_URL: optional(z.string().url()),
+  OUTBOX_EDO_SECRET: optional(z.string().min(32)),
+  /** Hosts allowed in schedule links (Moodle / Zoom), comma separated; subdomains included. */
+  SCHEDULE_LINK_HOSTS: z.string().default('moodle.puet.edu.ua,zoom.us,meet.google.com,teams.microsoft.com'),
+  /** Admissions consultant: "extractive" quotes the rules (nothing leaves the server); "anthropic" asks Claude. */
+  ADMISSIONS_ANSWERS: z.enum(['extractive', 'anthropic']).default('extractive'),
+  /** Only with ADMISSIONS_ANSWERS=anthropic. Never logged. */
+  ANTHROPIC_API_KEY: optional(z.string().min(20)),
+  ADMISSIONS_MODEL: z.string().regex(/^[a-z0-9.-]{3,64}$/).default('claude-opus-5-5'),
+  /** Questions per person per hour. */
+  ADMISSIONS_RATE_PER_HOUR: z.coerce.number().int().min(1).max(500).default(20),
 });
 
 export interface AppConfig {
@@ -119,6 +134,11 @@ export interface AppConfig {
     qes: { url: string; token: string } | null;
   };
   livekit: { url: string; publicUrl: string; apiKey: string; apiSecret: string } | null;
+  bots: {
+    outbox: Partial<Record<'DEANERY' | 'EDO', { url: string; secret: string }>>;
+    scheduleLinkHosts: string[];
+    admissions: { answers: 'extractive' | 'anthropic'; model: string; ratePerHour: number; apiKey?: string };
+  };
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -134,6 +154,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     rawClients = JSON.parse(e.INTEGRATION_CLIENTS);
   } catch {
     throw new Error('Invalid configuration: INTEGRATION_CLIENTS is not valid JSON');
+  }
+  for (const url of [e.OUTBOX_DEANERY_URL, e.OUTBOX_EDO_URL]) {
+    // Outbound events carry personal data (student ids): never over plain HTTP in production.
+    if (url && e.NODE_ENV === 'production' && !url.startsWith('https://')) {
+      throw new Error('Invalid configuration: OUTBOX_*_URL must use https');
+    }
+  }
+  if (e.ADMISSIONS_ANSWERS === 'anthropic' && !e.ANTHROPIC_API_KEY) {
+    throw new Error('Invalid configuration: ADMISSIONS_ANSWERS=anthropic needs ANTHROPIC_API_KEY');
   }
   const clients = z.record(integrationClient).safeParse(rawClients);
   if (!clients.success) throw new Error('Invalid configuration: INTEGRATION_CLIENTS entries');
@@ -188,5 +217,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
             apiSecret: e.LIVEKIT_API_SECRET,
           }
         : null,
+    bots: {
+      outbox: {
+        ...(e.OUTBOX_DEANERY_URL && e.OUTBOX_DEANERY_SECRET ? { DEANERY: { url: e.OUTBOX_DEANERY_URL, secret: e.OUTBOX_DEANERY_SECRET } } : {}),
+        ...(e.OUTBOX_EDO_URL && e.OUTBOX_EDO_SECRET ? { EDO: { url: e.OUTBOX_EDO_URL, secret: e.OUTBOX_EDO_SECRET } } : {}),
+      },
+      scheduleLinkHosts: e.SCHEDULE_LINK_HOSTS.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean),
+      admissions: {
+        answers: e.ADMISSIONS_ANSWERS,
+        model: e.ADMISSIONS_MODEL,
+        ratePerHour: e.ADMISSIONS_RATE_PER_HOUR,
+        ...(e.ANTHROPIC_API_KEY ? { apiKey: e.ANTHROPIC_API_KEY } : {}),
+      },
+    },
   };
 }

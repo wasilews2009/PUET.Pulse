@@ -5,6 +5,8 @@ import { FilesService } from '../files/files.service';
 import { DIGEST_STORE, type DigestStore } from '../notifications/digest.store';
 import { PkiService } from '../pki/pki.service';
 import { CallsService } from '../calls/calls.service';
+import { BotInboxService } from '../bots/bot-inbox.service';
+import { OutboxService } from '../bots/outbox.service';
 import { PollsService } from '../polls/polls.service';
 import { NotificationService } from '../notifications/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -25,7 +27,8 @@ interface Job {
  *  - retry quarantined files whose scan was deferred (scanner down);
  *  - mark expired certificates;
  *  - close polls and votes whose deadline passed;
- *  - re-check everyone connected to a call, close finished consultation rooms.
+ *  - re-check everyone connected to a call, close finished consultation rooms;
+ *  - deliver signed outbound events to the deanery and the ЕДО, purge expired bot Q&A.
  */
 @Injectable()
 export class JobsService implements OnApplicationBootstrap, OnModuleDestroy {
@@ -43,6 +46,8 @@ export class JobsService implements OnApplicationBootstrap, OnModuleDestroy {
     @Inject(PkiService) private readonly pki: PkiService,
     @Inject(PollsService) private readonly polls: PollsService,
     @Inject(CallsService) private readonly calls: CallsService,
+    @Inject(OutboxService) private readonly outbox: OutboxService,
+    @Inject(BotInboxService) private readonly botInbox: BotInboxService,
   ) {}
 
   readonly jobs: Job[] = [
@@ -53,6 +58,8 @@ export class JobsService implements OnApplicationBootstrap, OnModuleDestroy {
     { name: 'certificate-expiry', everyMs: 3_600_000, run: () => this.pki.expireCertificates() },
     { name: 'poll-close', everyMs: 30_000, run: () => this.polls.closeDue() },
     { name: 'call-revalidate', everyMs: 60_000, run: () => this.calls.revalidate() },
+    { name: 'outbox-flush', everyMs: 30_000, run: () => this.outbox.flush() },
+    { name: 'bot-purge', everyMs: 3_600_000, run: () => this.botInbox.purgeExpired() },
   ];
 
   onApplicationBootstrap() {

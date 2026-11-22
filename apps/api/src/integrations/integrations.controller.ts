@@ -8,6 +8,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProvisioningService } from '../provisioning/provisioning.service';
 import { IDEMPOTENCY_HEADER } from './hmac';
 import type { IntegrationRequest } from './integration-auth.middleware';
+import { ChancelleryService } from '../bots/chancellery.service';
+import { DeaneryService } from '../bots/deanery.service';
+import { ScheduleService } from '../bots/schedule.service';
+import { deaneryBatch, edoBatch, scheduleBatch } from '../bots/bots.schemas';
 import { offboarding, staffBatch, studentBatch, teachingLoad } from './schemas';
 import { SyncService, type SyncResult } from './sync.service';
 
@@ -18,6 +22,7 @@ const AUTHZ = { type: ResourceType.INTEGRATION } as const;
  * Webhooks for ЄДЕБО (students), HR (staff), ERP (teaching load) and offboarding.
  * Each call: HMAC-signed, bound to one tenant, requires an Idempotency-Key; a
  * repeated key returns the stored result instead of applying the batch twice.
+ * Phase 8 adds the bot feeds: deanery (certificates, ІНП), schedule changes and ЕДО registration.
  */
 @Controller('integrations')
 export class IntegrationsController {
@@ -25,6 +30,9 @@ export class IntegrationsController {
     @Inject(SyncService) private readonly sync: SyncService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(ProvisioningService) private readonly provisioning: ProvisioningService,
+    @Inject(DeaneryService) private readonly deanery: DeaneryService,
+    @Inject(ScheduleService) private readonly schedule: ScheduleService,
+    @Inject(ChancelleryService) private readonly chancellery: ChancelleryService,
   ) {}
 
   @Post('edebo/students')
@@ -63,12 +71,34 @@ export class IntegrationsController {
     );
   }
 
+  @Post('deanery')
+  @HttpCode(200)
+  @Authorize(Action.SYNC_INGEST, AUTHZ)
+  deaneryFeed(@Req() req: IntegrationRequest, @Body() body: unknown) {
+    return this.run(req, 'DEANERY', deaneryBatch, body, (tenantId, b) => this.deanery.ingest(tenantId, b), false);
+  }
+
+  @Post('schedule')
+  @HttpCode(200)
+  @Authorize(Action.SYNC_INGEST, AUTHZ)
+  scheduleFeed(@Req() req: IntegrationRequest, @Body() body: unknown) {
+    return this.run(req, 'SCHEDULE', scheduleBatch, body, (tenantId, b) => this.schedule.ingest(tenantId, b), false);
+  }
+
+  @Post('edo')
+  @HttpCode(200)
+  @Authorize(Action.SYNC_INGEST, AUTHZ)
+  edoFeed(@Req() req: IntegrationRequest, @Body() body: unknown) {
+    return this.run(req, 'EDO', edoBatch, body, (tenantId, b) => this.chancellery.ingest(tenantId, b), false);
+  }
+
   private async run<T>(
     req: IntegrationRequest,
     kind: IntegrationKind,
     schema: ZodType<T, ZodTypeDef, unknown>,
     body: unknown,
     apply: (tenantId: string, batch: T, actorId: string) => Promise<SyncResult>,
+    reconcile = true,
   ) {
     const client = req.integrationClient!;
     if (!client.kinds.includes(kind)) throw new ForbiddenException('Access denied');
@@ -93,6 +123,7 @@ export class IntegrationsController {
         summary: result as unknown as Prisma.InputJsonValue,
       },
     });
+    if (!reconcile) return { replayed: false, ...result };
     // Channels and memberships follow the directory right away.
     let channels: unknown = null;
     try {

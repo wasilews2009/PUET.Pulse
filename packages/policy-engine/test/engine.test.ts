@@ -9,7 +9,7 @@ import {
   ResourceType,
   RoleCode,
 } from '@puet/shared';
-import { PolicyEngine, canSeeInDirectory, evaluateCondition, validateCondition, type Resource } from '../src';
+import { PolicyEngine, canSeeInDirectory, evaluateCondition, validateCondition, type Principal, type Resource } from '../src';
 import {
   DEPT_CS,
   DEPT_LAW,
@@ -626,5 +626,79 @@ describe('calls and consultations (Phase 7)', () => {
   it('a student keeps access to their own booking after the course ends (to cancel it)', () => {
     const later = student({ activeCourseOfferingIds: [] });
     expect(engine.can(later, Action.CONSULTATION_BOOK, slot({ isBooked: true }), env())).toBe(true);
+  });
+});
+
+describe('corporate bots and service desk (Phase 8)', () => {
+  const bot = (botCode: string, over: Partial<Resource> = {}): Resource => ({ type: ResourceType.BOT, id: botCode, tenantId: T_MAIN, botCode, ...over });
+  const self = (userId = 'u-student'): Resource => ({ type: ResourceType.SELF, tenantId: T_MAIN, ownerId: userId });
+  const OU_IT = 'ou-it-center';
+  const OU_ADMISSIONS = 'ou-admissions';
+  const guest = principal({ userId: 'u-guest', kind: PrincipalKind.GUEST, roles: [{ role: RoleCode.GUEST, tenantId: T_MAIN, expiresAt: new Date(NOW.getTime() + 86_400_000) }] });
+  const staff = (role: RoleCode, over: Partial<Principal> = {}) =>
+    principal({ userId: `u-${role.toLowerCase()}`, kind: PrincipalKind.STAFF, roles: [{ role, tenantId: T_MAIN }], mfaVerified: true, ...over });
+  const ticket = (over: Partial<Resource> = {}): Resource => ({ type: ResourceType.TICKET, id: 't-1', tenantId: T_MAIN, ownerId: 'u-student', orgUnitId: OU_IT, ...over });
+
+  it('each bot serves its own audience: deanery for students, chancellery for staff, admissions for everyone', () => {
+    expect(engine.can(student(), Action.BOT_USE, bot('DEANERY'), env())).toBe(true);
+    expect(engine.evaluate(lecturer(), Action.BOT_USE, bot('DEANERY'), env()).reason).toBe('bot.not_available');
+    expect(engine.evaluate(student(), Action.BOT_USE, bot('CHANCELLERY'), env()).reason).toBe('bot.not_available');
+    expect(engine.can(lecturer(), Action.BOT_USE, bot('CHANCELLERY'), env())).toBe(true);
+    expect(engine.can(guest, Action.BOT_USE, bot('ADMISSIONS'), env())).toBe(true);
+    expect(engine.evaluate(guest, Action.BOT_USE, bot('SERVICE_DESK'), env()).reason).toBe('bot.not_available');
+    expect(engine.evaluate(student(), Action.BOT_USE, bot('NOT_A_BOT'), env()).reason).toBe('bot.unknown');
+    // Listing one's bots is allowed; each bot is still decided on its own.
+    expect(engine.can(guest, Action.BOT_USE, self('u-guest'), env())).toBe(true);
+    expect(engine.evaluate(guest, Action.BOT_USE, { type: ResourceType.TICKET, id: 't', tenantId: T_MAIN }, env()).reason).toBe('resource.type_mismatch');
+  });
+
+  it('guest isolation: applicants cannot order certificates, open tickets or read schedules', () => {
+    expect(engine.can(guest, Action.DEANERY_USE, self('u-guest'), env())).toBe(false);
+    expect(engine.can(guest, Action.TICKET_CREATE, self('u-guest'), env())).toBe(false);
+    expect(engine.can(guest, Action.SCHEDULE_READ, self('u-guest'), env())).toBe(false);
+  });
+
+  it('IDOR: a student cancels only their own certificate request', () => {
+    const request = { type: ResourceType.STUDENT_DOCUMENT, id: 'r-1', tenantId: T_MAIN, ownerId: 'u-other-student' };
+    expect(engine.evaluate(student(), Action.DEANERY_USE, request, env()).reason).toBe('ownership.required');
+    expect(engine.can(student(), Action.DEANERY_USE, { ...request, ownerId: 'u-student' }, env())).toBe(true);
+    expect(engine.evaluate(lecturer(), Action.DEANERY_USE, self('u-lecturer'), env()).reason).toBe('deanery.students_only');
+  });
+
+  it('IDOR: a ticket is visible to its requester and its handlers only', () => {
+    expect(engine.can(student(), Action.TICKET_READ, ticket(), env())).toBe(true);
+    const stranger = student({ userId: 'u-stranger' });
+    expect(engine.evaluate(stranger, Action.TICKET_READ, ticket(), env()).reason).toBe('ownership.required');
+    const it = staff(RoleCode.ADMIN_STAFF, { orgUnitIds: [OU_IT] });
+    expect(engine.can(it, Action.TICKET_READ, ticket({ isHandler: true }), env())).toBe(true);
+    expect(engine.can(it, Action.TICKET_HANDLE, ticket({ isHandler: true }), env())).toBe(true);
+    // Staff of another unit (not computed as handler by the resolver) see nothing.
+    expect(engine.evaluate(it, Action.TICKET_READ, ticket({ isHandler: false }), env()).reason).toBe('ownership.required');
+  });
+
+  it('a requester cannot work their own ticket; only handlers change its status', () => {
+    expect(engine.evaluate(student(), Action.TICKET_HANDLE, ticket(), env()).reason).toBe('rbac.denied');
+    expect(engine.can(student(), Action.TICKET_UPDATE, ticket(), env())).toBe(true);
+    const lecturerHandler = lecturer();
+    expect(engine.evaluate(lecturerHandler, Action.TICKET_HANDLE, ticket({ isHandler: true }), env()).reason).toBe('rbac.denied');
+  });
+
+  it('dormitory repairs go to the commandant of that dormitory only', () => {
+    const repair = ticket({ orgUnitId: undefined, dormitoryId: DORM_1 });
+    const own = staff(RoleCode.DORM_COMMANDANT, { roles: [{ role: RoleCode.DORM_COMMANDANT, tenantId: T_MAIN, scope: { dormitoryId: DORM_1 } }] });
+    const other = staff(RoleCode.DORM_COMMANDANT, { userId: 'u-cmd-2', roles: [{ role: RoleCode.DORM_COMMANDANT, tenantId: T_MAIN, scope: { dormitoryId: DORM_2 } }] });
+    expect(engine.can(own, Action.TICKET_HANDLE, repair, env())).toBe(true);
+    expect(engine.evaluate(other, Action.TICKET_HANDLE, repair, env()).reason).toBe('ticket.not_handler');
+    expect(engine.evaluate(other, Action.TICKET_READ, repair, env()).reason).toBe('ownership.required');
+  });
+
+  it('only the tenant Admissions Office maintains the rules the consultant cites', () => {
+    const kb = bot('ADMISSIONS', { orgUnitId: OU_ADMISSIONS });
+    const office = staff(RoleCode.ADMIN_STAFF, { orgUnitIds: [OU_ADMISSIONS] });
+    const hr = staff(RoleCode.ADMIN_STAFF, { orgUnitIds: [OU_HR] });
+    expect(engine.can(office, Action.ADMISSIONS_KB_MANAGE, kb, env())).toBe(true);
+    expect(engine.evaluate(hr, Action.ADMISSIONS_KB_MANAGE, kb, env()).reason).toBe('admissions.office_only');
+    expect(engine.evaluate(student(), Action.ADMISSIONS_KB_MANAGE, kb, env()).reason).toBe('rbac.denied');
+    expect(engine.evaluate(office, Action.ADMISSIONS_KB_MANAGE, bot('DEANERY', { orgUnitId: OU_ADMISSIONS }), env()).reason).toBe('resource.type_mismatch');
   });
 });

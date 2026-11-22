@@ -40,6 +40,8 @@ const AUDITED_ALLOW: ReadonlySet<string> = new Set([
   Action.CHANNEL_MEMBERS_MANAGE,
   Action.CHANNEL_ARCHIVE,
   Action.SYNC_INGEST,
+  Action.TICKET_HANDLE,
+  Action.ADMISSIONS_KB_MANAGE,
 ]);
 
 interface Extracted {
@@ -89,7 +91,7 @@ export class PolicyGuard implements CanActivate {
     let id: string | undefined;
     if (meta.resource.idField) {
       const raw = ex.input(meta.resource.idField);
-      if (typeof raw !== 'string' || !UUID_RE.test(raw)) {
+      if (typeof raw !== 'string' || !(meta.resource.idPattern ?? UUID_RE).test(raw)) {
         return this.reject(ex, principal, meta, undefined, 'resource.invalid_id');
       }
       id = raw;

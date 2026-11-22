@@ -181,6 +181,22 @@ export const Action = {
   CONSULTATION_BOOK: 'consultation.book',
   /** Phase 7: cancel one's own slot and see who booked it. */
   CONSULTATION_MANAGE: 'consultation.manage',
+  /** Phase 8: open a corporate bot's inbox (read, mark read, ask the admissions consultant). */
+  BOT_USE: 'bot.use',
+  /** Phase 8: «ЄДЕБО / Деканат»: order certificates, see one's requests and study plan (students). */
+  DEANERY_USE: 'deanery.use',
+  /** Phase 8: «Розклад ПУЕТ»: one's own schedule changes. */
+  SCHEDULE_READ: 'schedule.read',
+  /** Phase 8: open a service desk ticket (IT, facilities, dormitory repair). */
+  TICKET_CREATE: 'ticket.create',
+  /** Phase 8: read a ticket (its requester or a handler). */
+  TICKET_READ: 'ticket.read',
+  /** Phase 8: comment on a ticket, confirm or reopen a resolved one (requester or handler). */
+  TICKET_UPDATE: 'ticket.update',
+  /** Phase 8: work a ticket queue: status, forwarding, assignment (handlers only). */
+  TICKET_HANDLE: 'ticket.handle',
+  /** Phase 8: upload and activate the admission rules the consultant answers from (Admissions Office). */
+  ADMISSIONS_KB_MANAGE: 'admissions.kb.manage',
 } as const;
 export type Action = (typeof Action)[keyof typeof Action];
 
@@ -206,7 +222,23 @@ export const ResourceType = {
   CALL: 'call',
   /** Phase 7: a consultation slot of a lecturer. */
   CONSULTATION: 'consultation',
+  /** Phase 8: a corporate bot (its inbox, or the admissions knowledge base). */
+  BOT: 'bot',
+  /** Phase 8: a service desk ticket. */
+  TICKET: 'ticket',
+  /** Phase 8: a certificate ordered from the deanery. */
+  STUDENT_DOCUMENT: 'student_document',
 } as const;
+
+/** Phase 8: corporate bots. Values match the BotCode enum of the database. */
+export const BotCode = {
+  DEANERY: 'DEANERY',
+  SCHEDULE: 'SCHEDULE',
+  SERVICE_DESK: 'SERVICE_DESK',
+  CHANCELLERY: 'CHANCELLERY',
+  ADMISSIONS: 'ADMISSIONS',
+} as const;
+export type BotCode = (typeof BotCode)[keyof typeof BotCode];
 
 /** Roles the ЄДЕБО / HR sync may grant. RECTORATE and SUPER_ADMIN are granted only by an administrator. */
 export const SYNC_ASSIGNABLE_ROLES: readonly RoleCode[] = [

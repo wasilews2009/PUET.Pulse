@@ -13,6 +13,7 @@
     "pki:init-ca": "tsx scripts/init-ca.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.12.0",
     "@aws-sdk/client-s3": "3.1175.0",
     "@fontsource/inter": "5.3.0",
     "@nestjs/common": "^11.1.6",

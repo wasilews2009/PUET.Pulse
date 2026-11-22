@@ -11,6 +11,11 @@ export interface ResourceRef {
    * resources (directory, structure, audit), which resolve to the caller's tenant.
    */
   idField?: string;
+  /**
+   * Ids are UUIDs unless the route names a closed vocabulary instead (e.g. a bot slug).
+   * The pattern must be anchored and match only values the resolver knows.
+   */
+  idPattern?: RegExp;
 }
 
 export interface AuthorizeMetadata {

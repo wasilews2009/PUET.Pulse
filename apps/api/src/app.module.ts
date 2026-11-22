@@ -1,6 +1,17 @@
 import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import Redis from 'ioredis';
+import Anthropic from '@anthropic-ai/sdk';
+import { AdmissionsService } from './bots/admissions/admissions.service';
+import { ANSWER_GENERATOR, ClaudeAnswerGenerator, ExtractiveAnswerGenerator } from './bots/admissions/answer-generator';
+import { RATE_LIMITER, RedisRateLimiter } from './bots/admissions/rate-limiter';
+import { BotInboxService } from './bots/bot-inbox.service';
+import { BotsController } from './bots/bots.controller';
+import { ChancelleryService } from './bots/chancellery.service';
+import { DeaneryService } from './bots/deanery.service';
+import { OUTBOX_SENDER, OutboxService, fetchSender } from './bots/outbox.service';
+import { ScheduleService } from './bots/schedule.service';
+import { ServiceDeskService } from './bots/service-desk.service';
 import { AdminController } from './admin/admin.controller';
 import { ApprovalsController } from './approvals/approvals.controller';
 import { ApprovalsService } from './approvals/approvals.service';
@@ -37,11 +48,14 @@ import { OIDC_PROVIDER, OpenIdClientProvider } from './auth/oidc.service';
 import { PrincipalFactory } from './auth/principal.factory';
 import { PolicyGuard } from './authz/policy.guard';
 import {
+  BotResolver,
   ChannelScopedResolver,
   ConsultationResolver,
   DeviceResolver,
   SelfResolver,
+  StudentDocumentResolver,
   TenantResourceResolver,
+  TicketResolver,
   UserTargetResolver,
 } from './authz/prisma-resolvers';
 import { RESOURCE_RESOLVERS } from './authz/resource-resolver';
@@ -86,6 +100,7 @@ export const REDIS = Symbol('REDIS');
     PollsController,
     CallsController,
     ConsultationsController,
+    BotsController,
     IntegrationsController,
     AdminController,
   ],
@@ -122,6 +137,26 @@ export const REDIS = Symbol('REDIS');
       inject: [APP_CONFIG],
       useFactory: (cfg: AppConfig) => (cfg.livekit ? new LiveKitMediaServer(cfg.livekit) : new DisabledMediaServer()),
     },
+    BotInboxService,
+    OutboxService,
+    { provide: OUTBOX_SENDER, useValue: fetchSender },
+    DeaneryService,
+    ScheduleService,
+    ServiceDeskService,
+    ChancelleryService,
+    AdmissionsService,
+    { provide: RATE_LIMITER, inject: [REDIS], useFactory: (redis: Redis) => new RedisRateLimiter(redis) },
+    {
+      provide: ANSWER_GENERATOR,
+      inject: [APP_CONFIG],
+      useFactory: (cfg: AppConfig) => {
+        const a = cfg.bots.admissions;
+        // Opt-in only: the question and the excerpts leave the university's servers.
+        return a.answers === 'anthropic' && a.apiKey
+          ? new ClaudeAnswerGenerator(new Anthropic({ apiKey: a.apiKey }), a.model)
+          : new ExtractiveAnswerGenerator();
+      },
+    },
     VerificationService,
     MessagingService,
     NotificationService,
@@ -146,10 +181,23 @@ export const REDIS = Symbol('REDIS');
     SelfResolver,
     DeviceResolver,
     ConsultationResolver,
+    BotResolver,
+    TicketResolver,
+    StudentDocumentResolver,
     {
       provide: RESOURCE_RESOLVERS,
       useFactory: (...resolvers: unknown[]) => resolvers,
-      inject: [ChannelScopedResolver, UserTargetResolver, TenantResourceResolver, SelfResolver, DeviceResolver, ConsultationResolver],
+      inject: [
+        ChannelScopedResolver,
+        UserTargetResolver,
+        TenantResourceResolver,
+        SelfResolver,
+        DeviceResolver,
+        ConsultationResolver,
+        BotResolver,
+        TicketResolver,
+        StudentDocumentResolver,
+      ],
     },
     // Order matters: authenticate first, then authorize. Both apply to every route.
     { provide: APP_GUARD, useClass: AuthenticationGuard },

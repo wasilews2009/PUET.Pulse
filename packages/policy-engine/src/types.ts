@@ -79,6 +79,10 @@ export interface Resource {
   isApprover?: boolean;
   /** Consultation slots: whether the principal holds a live booking (computed server-side). */
   isBooked?: boolean;
+  /** Service desk tickets: whether the principal works in the unit the ticket is routed to (computed server-side). */
+  isHandler?: boolean;
+  /** Corporate bots: which bot the resource is (BotCode). */
+  botCode?: string;
   channelType?: ChannelType;
   e2eeMode?: E2eeMode;
   confidential?: boolean;

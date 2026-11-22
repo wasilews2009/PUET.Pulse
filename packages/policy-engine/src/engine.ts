@@ -1,6 +1,7 @@
 import {
   AccountStatus,
   Action,
+  BotCode,
   ChannelType,
   CROSS_TENANT_ROLES,
   E2eeMode,
@@ -306,6 +307,9 @@ export class PolicyEngine {
     const consultation = this.consultationGuardrails(principal, action, resource);
     if (consultation !== undefined) return consultation;
 
+    const services = this.serviceGuardrails(principal, action, resource, grants);
+    if (services !== undefined) return services;
+
     switch (action) {
       case Action.DM_START: {
         if (!resource.target) return deny('dm.target_required');
@@ -382,6 +386,85 @@ export class PolicyEngine {
         return isHost || resource.isBooked ? null : deny('membership.required');
       default:
         return deny('resource.type_mismatch');
+    }
+  }
+
+  /**
+   * Phase 8 corporate bots and their services. Returns undefined when the action is not about them.
+   * Each bot serves the people its office serves; tickets are visible to their requester and to the
+   * handlers of the unit (or the commandant of the dormitory) they are routed to.
+   */
+  private serviceGuardrails(
+    principal: Principal,
+    action: Action,
+    resource: Resource,
+    grants: RoleGrant[],
+  ): Decision | null | undefined {
+    const person = principal.kind === PrincipalKind.STAFF || principal.kind === PrincipalKind.STUDENT;
+    const own = resource.ownerId !== undefined && resource.ownerId === principal.userId;
+    switch (action) {
+      case Action.BOT_USE: {
+        // Listing one's own bots; each bot is then decided on its own BOT resource.
+        if (resource.type === ResourceType.SELF) return null;
+        if (resource.type !== ResourceType.BOT) return deny('resource.type_mismatch');
+        switch (resource.botCode) {
+          case BotCode.DEANERY:
+            return principal.kind === PrincipalKind.STUDENT ? null : deny('bot.not_available');
+          case BotCode.SCHEDULE:
+          case BotCode.SERVICE_DESK:
+            return person ? null : deny('bot.not_available');
+          case BotCode.CHANCELLERY:
+            return principal.kind === PrincipalKind.STAFF ? null : deny('bot.not_available');
+          case BotCode.ADMISSIONS:
+            // Applicants are guests of the Admissions Office; everyone may ask about the rules.
+            return null;
+          default:
+            return deny('bot.unknown');
+        }
+      }
+      case Action.ADMISSIONS_KB_MANAGE: {
+        if (resource.type !== ResourceType.BOT || resource.botCode !== BotCode.ADMISSIONS) {
+          return deny('resource.type_mismatch');
+        }
+        // Only staff of the tenant's Admissions Office maintain the rules the consultant cites.
+        if (!resource.orgUnitId || !principal.orgUnitIds.includes(resource.orgUnitId)) return deny('admissions.office_only');
+        return null;
+      }
+      case Action.DEANERY_USE: {
+        if (principal.kind !== PrincipalKind.STUDENT) return deny('deanery.students_only');
+        if (resource.type === ResourceType.SELF) return null;
+        if (resource.type !== ResourceType.STUDENT_DOCUMENT) return deny('resource.type_mismatch');
+        return own ? null : deny('ownership.required');
+      }
+      case Action.SCHEDULE_READ:
+        if (resource.type !== ResourceType.SELF) return deny('resource.type_mismatch');
+        return person ? null : deny('schedule.not_available');
+      case Action.TICKET_CREATE:
+        if (resource.type !== ResourceType.SELF) return deny('resource.type_mismatch');
+        return person ? null : deny('ticket.not_available');
+      case Action.TICKET_READ:
+      case Action.TICKET_UPDATE:
+      case Action.TICKET_HANDLE: {
+        if (action === Action.TICKET_HANDLE && resource.type === ResourceType.SELF) {
+          // The queue itself: the query returns only tickets routed to the caller's units.
+          return principal.kind === PrincipalKind.STAFF ? null : deny('ticket.handlers_only');
+        }
+        if (resource.type !== ResourceType.TICKET) return deny('resource.type_mismatch');
+        const commandant =
+          resource.dormitoryId !== undefined &&
+          grants.some(
+            (g) =>
+              g.role === RoleCode.DORM_COMMANDANT &&
+              g.tenantId === resource.tenantId &&
+              g.scope?.dormitoryId !== undefined &&
+              g.scope.dormitoryId === resource.dormitoryId,
+          );
+        const handler = principal.kind === PrincipalKind.STAFF && (resource.isHandler === true || commandant);
+        if (action === Action.TICKET_HANDLE) return handler ? null : deny('ticket.not_handler');
+        return own || handler ? null : deny('ownership.required');
+      }
+      default:
+        return undefined;
     }
   }
 

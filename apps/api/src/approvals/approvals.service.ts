@@ -10,6 +10,7 @@ import type { Principal, Resource } from '@puet/policy-engine';
 import { Action, ResourceType } from '@puet/shared';
 import { z } from 'zod';
 import { AuditService } from '../audit/audit.service';
+import { ChancelleryService } from '../bots/chancellery.service';
 import { PrincipalFactory } from '../auth/principal.factory';
 import { UserTargetResolver } from '../authz/prisma-resolvers';
 import { FilesService } from '../files/files.service';
@@ -52,6 +53,8 @@ export function toRouteDto(r: RouteRow) {
     createdById: r.createdById,
     createdByName: r.createdBy.fullNameUk,
     createdAt: r.createdAt.toISOString(),
+    registrationNo: r.registrationNo,
+    registeredAt: r.registeredAt?.toISOString() ?? null,
     currentStepId: current?.id ?? null,
     steps: r.steps.map((s) => ({
       id: s.id,
@@ -82,6 +85,7 @@ export class ApprovalsService {
     @Inject(UserTargetResolver) private readonly users: UserTargetResolver,
     @Inject(FilesService) private readonly files: FilesService,
     @Inject(REALTIME_BUS) private readonly bus: RealtimeBus,
+    @Inject(ChancelleryService) private readonly chancellery: ChancelleryService,
   ) {}
 
   /**
@@ -133,7 +137,9 @@ export class ApprovalsService {
     }
     await this.audit.record({ actorId: principal.userId, tenantId: file.tenantId, action: Action.APPROVAL_ROUTE_CREATE, resourceType: 'file', resourceId: file.id!, outcome: 'SUCCESS', metadata: { routeId: route.id, approvers: ids.length } });
     await this.bus.emitToUsers([ids[0]!], 'approval.requested', { fileId: file.id, routeId: route.id });
-    return toRouteDto(route);
+    const dto = toRouteDto(route);
+    await this.chancellery.routeChanged(file.tenantId, dto);
+    return dto;
   }
 
   async list(file: Resource) {
@@ -199,6 +205,7 @@ export class ApprovalsService {
     const dto = toRouteDto(result);
     const next = dto.steps.find((s) => s.id === dto.currentStepId);
     await this.bus.emitToUsers([result.createdById, ...(next ? [next.approverId] : [])], 'approval.updated', { fileId: file.id, routeId, status: result.status });
+    await this.chancellery.routeChanged(file.tenantId, dto);
     return dto;
   }
 

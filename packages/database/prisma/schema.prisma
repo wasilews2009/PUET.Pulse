@@ -112,6 +112,12 @@ enum IntegrationKind {
   HR_STAFF
   TEACHING_LOAD
   OFFBOARDING
+  /// Phase 8: Деканат / ЄДЕБО office (certificate statuses, individual study plans).
+  DEANERY
+  /// Phase 8: «Розклад ПУЕТ» (room changes, cancellations, Moodle / Zoom links).
+  SCHEDULE
+  /// Phase 8: ЕДО / Канцелярія (registration numbers of approved orders).
+  EDO
 }
 
 enum IntegrationEventStatus {
@@ -323,12 +329,13 @@ model OrgUnit {
   createdAt             DateTime    @default(now()) @map("created_at")
   updatedAt             DateTime    @updatedAt @map("updated_at")
 
-  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  parent      OrgUnit?       @relation("OrgUnitTree", fields: [parentId], references: [id], onDelete: Restrict)
-  children    OrgUnit[]      @relation("OrgUnitTree")
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  parent      OrgUnit?        @relation("OrgUnitTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children    OrgUnit[]       @relation("OrgUnitTree")
   members     StaffOrgUnit[]
   channels    Channel[]
   dormitories Dormitory[]
+  tickets     ServiceTicket[]
 
   @@unique([tenantId, code])
   @@index([tenantId, kind])
@@ -352,6 +359,7 @@ model Dormitory {
   campus   OrgUnit?        @relation(fields: [campusId], references: [id], onDelete: SetNull)
   rooms    DormitoryRoom[]
   channels Channel[]
+  tickets  ServiceTicket[]
 
   @@unique([tenantId, number])
   @@map("dormitories")
@@ -394,6 +402,7 @@ model AcademicGroup {
   students  StudentProfile[]
   courses   CourseOfferingGroup[]
   channels  Channel[]
+  schedule  ScheduleChange[]
 
   @@unique([tenantId, code])
   @@index([tenantId, instituteId])
@@ -408,8 +417,9 @@ model Semester {
   endsOn    DateTime @map("ends_on") @db.Date
   isCurrent Boolean  @default(false) @map("is_current")
 
-  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   courseOfferings CourseOffering[]
+  studyPlans      IndividualStudyPlan[]
 
   @@unique([tenantId, code])
   @@map("semesters")
@@ -452,6 +462,7 @@ model CourseOffering {
   groups            CourseOfferingGroup[]
   channel           Channel?
   consultationSlots ConsultationSlot[]
+  scheduleChanges   ScheduleChange[]
 
   @@unique([tenantId, externalId])
   @@index([tenantId, semesterId])
@@ -515,33 +526,40 @@ model User {
   createdAt     DateTime       @default(now()) @map("created_at")
   updatedAt     DateTime       @updatedAt @map("updated_at")
 
-  tenant           Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  tenant           Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   staffProfile     StaffProfile?
   studentProfile   StudentProfile?
-  roleAssignments  RoleAssignment[]      @relation("RoleAssignee")
-  grantedRoles     RoleAssignment[]      @relation("RoleGrantor")
+  roleAssignments  RoleAssignment[]         @relation("RoleAssignee")
+  grantedRoles     RoleAssignment[]         @relation("RoleGrantor")
   memberships      ChannelMember[]
   messages         Message[]
   files            FileObject[]
   quietHours       QuietHoursSchedule?
   certificates     UserCertificate[]
   approvalSteps    ApprovalStep[]
-  approvalRoutes   ApprovalRoute[]       @relation("ApprovalRouteCreator")
-  signatures       DocumentSignature[]   @relation("DocumentSigner")
-  annotations      PdfAnnotation[]       @relation("AnnotationAuthor")
+  approvalRoutes   ApprovalRoute[]          @relation("ApprovalRouteCreator")
+  signatures       DocumentSignature[]      @relation("DocumentSigner")
+  annotations      PdfAnnotation[]          @relation("AnnotationAuthor")
   devices          Device[]
   crossSigningKeys CrossSigningKey[]
   keyBackups       KeyBackupVersion[]
   secrets          UserSecret[]
-  polls            Poll[]                @relation("PollCreator")
+  polls            Poll[]                   @relation("PollCreator")
   pollVotes        PollParticipation[]
   pollBallots      PollBallot[]
   pollEligibility  PollEligible[]
   messageAcks      MessageAck[]
-  callsStarted     Call[]                @relation("CallStarter")
+  callsStarted     Call[]                   @relation("CallStarter")
   callsJoined      CallParticipant[]
-  hostedSlots      ConsultationSlot[]    @relation("ConsultationHost")
+  hostedSlots      ConsultationSlot[]       @relation("ConsultationHost")
   bookings         ConsultationBooking[]
+  botMessages      BotMessage[]
+  documentRequests StudentDocumentRequest[]
+  studyPlans       IndividualStudyPlan[]
+  tickets          ServiceTicket[]          @relation("TicketRequester")
+  assignedTickets  ServiceTicket[]          @relation("TicketAssignee")
+  ticketEvents     ServiceTicketEvent[]
+  admissionsDocs   AdmissionsDocument[]
 
   @@index([tenantId, status])
   @@index([tenantId, kind])
@@ -1058,6 +1076,10 @@ model ApprovalRoute {
   createdAt   DateTime       @default(now()) @map("created_at")
   updatedAt   DateTime       @updatedAt @map("updated_at")
 
+  /// Phase 8: registration number assigned by ЕДО / Канцелярія once the route is approved (set once).
+  registrationNo String?   @map("registration_no")
+  registeredAt   DateTime? @map("registered_at")
+
   file      FileObject     @relation(fields: [fileId], references: [id], onDelete: Restrict)
   tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   createdBy User           @relation("ApprovalRouteCreator", fields: [createdById], references: [id], onDelete: Restrict)
@@ -1361,4 +1383,281 @@ model ConsultationBooking {
   @@index([slotId, status])
   @@index([studentId, status])
   @@map("consultation_bookings")
+}
+
+// ─────────────────────── Phase 8: corporate bots ───────────────────────
+
+enum BotCode {
+  DEANERY
+  SCHEDULE
+  SERVICE_DESK
+  CHANCELLERY
+  ADMISSIONS
+}
+
+enum BotMessageDirection {
+  USER
+  BOT
+}
+
+/// A person's conversation with a corporate bot. Bots are server-side services, not accounts:
+/// each person has a private inbox per bot. Cards are structured JSON rendered as text by the client.
+model BotMessage {
+  id        String              @id @default(uuid()) @db.Uuid
+  tenantId  String              @map("tenant_id") @db.Uuid
+  userId    String              @map("user_id") @db.Uuid
+  bot       BotCode
+  direction BotMessageDirection
+  body      String?
+  card      Json?
+  readAt    DateTime?           @map("read_at")
+  /// Admissions questions and answers are kept for a limited time only.
+  expiresAt DateTime?           @map("expires_at")
+  createdAt DateTime            @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, bot, createdAt])
+  @@index([expiresAt])
+  @@map("bot_messages")
+}
+
+enum StudentDocumentType {
+  STUDY_CERTIFICATE
+  MILITARY_CERTIFICATE
+  INCOME_CERTIFICATE
+  ACADEMIC_TRANSCRIPT
+}
+
+enum StudentDocumentStatus {
+  REQUESTED
+  IN_PROGRESS
+  READY
+  ISSUED
+  REJECTED
+  CANCELLED
+}
+
+/// «ЄДЕБО / Деканат»: a certificate (довідка) ordered by a student. The deanery system receives it
+/// through the signed outbox and reports progress through the DEANERY webhook.
+model StudentDocumentRequest {
+  id          String                @id @default(uuid()) @db.Uuid
+  tenantId    String                @map("tenant_id") @db.Uuid
+  studentId   String                @map("student_id") @db.Uuid
+  type        StudentDocumentType
+  copies      Int                   @default(1)
+  purpose     String?
+  status      StudentDocumentStatus @default(REQUESTED)
+  deaneryNote String?               @map("deanery_note")
+  externalRef String?               @map("external_ref")
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+  closedAt    DateTime?             @map("closed_at")
+
+  student User @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@index([studentId, createdAt])
+  @@map("student_document_requests")
+}
+
+enum StudyPlanStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  NEEDS_CHANGES
+}
+
+/// Status of a student's individual study plan (ІНП) for a semester, pushed by the deanery.
+model IndividualStudyPlan {
+  tenantId   String          @map("tenant_id") @db.Uuid
+  studentId  String          @map("student_id") @db.Uuid
+  semesterId String          @map("semester_id") @db.Uuid
+  status     StudyPlanStatus
+  credits    Decimal?        @db.Decimal(5, 1)
+  note       String?
+  updatedAt  DateTime        @updatedAt @map("updated_at")
+
+  student  User     @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  semester Semester @relation(fields: [semesterId], references: [id], onDelete: Restrict)
+
+  @@id([studentId, semesterId])
+  @@map("individual_study_plans")
+}
+
+enum ScheduleChangeKind {
+  ROOM_CHANGE
+  CANCELLED
+  MOVED
+  ONLINE
+}
+
+/// «Розклад ПУЕТ»: one change to a class, pushed by the schedule system. Append-only.
+model ScheduleChange {
+  id               String             @id @default(uuid()) @db.Uuid
+  tenantId         String             @map("tenant_id") @db.Uuid
+  externalId       String             @map("external_id")
+  courseOfferingId String?            @map("course_offering_id") @db.Uuid
+  academicGroupId  String?            @map("academic_group_id") @db.Uuid
+  date             DateTime           @db.Date
+  pair             Int
+  kind             ScheduleChangeKind
+  room             String?
+  newDate          DateTime?          @map("new_date") @db.Date
+  newPair          Int?               @map("new_pair")
+  /// https link to Moodle / Zoom from the allowlisted hosts only.
+  link             String?
+  note             String?
+  createdAt        DateTime           @default(now()) @map("created_at")
+
+  courseOffering CourseOffering? @relation(fields: [courseOfferingId], references: [id], onDelete: Restrict)
+  academicGroup  AcademicGroup?  @relation(fields: [academicGroupId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, externalId])
+  @@index([tenantId, date])
+  @@map("schedule_changes")
+}
+
+enum TicketCategory {
+  IT
+  FACILITIES
+  DORMITORY
+}
+
+enum TicketStatus {
+  NEW
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+  REJECTED
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum TicketEventKind {
+  CREATED
+  STATUS
+  COMMENT
+  FORWARDED
+  ASSIGNED
+}
+
+/// «Сервіс-деск АГР та ІТ»: IT tickets go to the Information Center, facilities tickets to АГР,
+/// dormitory repairs to the commandant of the requester's dormitory (who may forward them to АГР).
+model ServiceTicket {
+  id          String         @id @default(uuid()) @db.Uuid
+  tenantId    String         @map("tenant_id") @db.Uuid
+  number      Int            @unique @default(autoincrement())
+  requesterId String         @map("requester_id") @db.Uuid
+  category    TicketCategory
+  priority    TicketPriority @default(NORMAL)
+  title       String
+  description String
+  /// Building and room for IT / facilities tickets (free text from the requester).
+  location    String?
+  /// Unit that handles the ticket (IT Center or АГР).
+  orgUnitId   String?        @map("org_unit_id") @db.Uuid
+  /// Dormitory repairs: the requester's dormitory, taken from the profile.
+  dormitoryId String?        @map("dormitory_id") @db.Uuid
+  /// Room of the requester, snapshot from the profile. Shown only to the requester and the commandant.
+  roomLabel   String?        @map("room_label")
+  status      TicketStatus   @default(NEW)
+  assigneeId  String?        @map("assignee_id") @db.Uuid
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  resolvedAt  DateTime?      @map("resolved_at")
+  closedAt    DateTime?      @map("closed_at")
+
+  requester User                 @relation("TicketRequester", fields: [requesterId], references: [id], onDelete: Restrict)
+  assignee  User?                @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: Restrict)
+  orgUnit   OrgUnit?             @relation(fields: [orgUnitId], references: [id], onDelete: Restrict)
+  dormitory Dormitory?           @relation(fields: [dormitoryId], references: [id], onDelete: Restrict)
+  events    ServiceTicketEvent[]
+
+  @@index([requesterId, createdAt])
+  @@index([orgUnitId, status])
+  @@index([dormitoryId, status])
+  @@map("service_tickets")
+}
+
+/// Ticket history: creation, status changes, comments, forwarding. Append-only.
+model ServiceTicketEvent {
+  id        String          @id @default(uuid()) @db.Uuid
+  ticketId  String          @map("ticket_id") @db.Uuid
+  actorId   String          @map("actor_id") @db.Uuid
+  kind      TicketEventKind
+  status    TicketStatus?
+  comment   String?
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  ticket ServiceTicket @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  actor  User          @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([ticketId, createdAt])
+  @@map("service_ticket_events")
+}
+
+/// «AI-консультант приймальної комісії»: the admission rules, uploaded by the Admissions Office.
+/// One document per tenant is active; answers cite only its chunks.
+model AdmissionsDocument {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  title        String
+  sourceSha256 String   @map("source_sha256")
+  active       Boolean  @default(false)
+  chunkCount   Int      @map("chunk_count")
+  uploadedById String   @map("uploaded_by_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  uploadedBy User              @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+  chunks     AdmissionsChunk[]
+
+  @@index([tenantId, createdAt])
+  @@map("admissions_documents")
+}
+
+model AdmissionsChunk {
+  id         String  @id @default(uuid()) @db.Uuid
+  documentId String  @map("document_id") @db.Uuid
+  ordinal    Int
+  heading    String?
+  text       String
+
+  document AdmissionsDocument @relation(fields: [documentId], references: [id], onDelete: Restrict)
+
+  @@unique([documentId, ordinal])
+  @@map("admissions_chunks")
+}
+
+enum OutboxTarget {
+  DEANERY
+  EDO
+}
+
+enum OutboxStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+/// Signed outbound webhooks to university systems (same HMAC scheme as inbound), retried by a job.
+model IntegrationOutbox {
+  id            String       @id @default(uuid()) @db.Uuid
+  tenantId      String       @map("tenant_id") @db.Uuid
+  target        OutboxTarget
+  eventType     String       @map("event_type")
+  payload       Json
+  status        OutboxStatus @default(PENDING)
+  attempts      Int          @default(0)
+  nextAttemptAt DateTime     @default(now()) @map("next_attempt_at")
+  lastError     String?      @map("last_error")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  sentAt        DateTime?    @map("sent_at")
+
+  @@index([status, nextAttemptAt])
+  @@map("integration_outbox")
 }
