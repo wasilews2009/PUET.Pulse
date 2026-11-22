@@ -8,6 +8,7 @@ import type { Channel, Message } from '../../api/types';
 import { Avatar, Badge, Button, cx, EmptyState, InlineError, Skeleton, formatTime } from '../../components/ui';
 import { pick } from '../../i18n';
 import { useMe } from '../../session/session';
+import { CallCard } from '../calls/CallCard';
 import { PollCard } from '../polls/PollCard';
 import { DirectiveBar } from './Directive';
 import { MessageBody } from './MessageBody';
@@ -65,6 +66,8 @@ export function Bubble({ m, channel, onOpenThread, showAuthor }: { m: Message; c
               <WarningCircle size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
               {t('message.undecryptable')}
             </span>
+          ) : m.callId ? (
+            <CallCard callId={m.callId} channel={channel} />
           ) : m.pollId ? (
             <PollCard pollId={m.pollId} channel={channel} />
           ) : plain.text === null ? (

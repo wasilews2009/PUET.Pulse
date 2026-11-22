@@ -1,13 +1,16 @@
-import { ArrowLeft, Bell, BellSlash, Files, Info, Lock, Timer, UsersThree, X } from '@phosphor-icons/react';
+import { ArrowLeft, Bell, BellSlash, Files, Info, Lock, Timer, UsersThree, VideoCamera, X } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useSearchParams } from 'react-router';
 import { api, isUuid } from '../../api/client';
 import { keys, useCard, useMembers, useMessages } from '../../api/queries';
-import type { Channel } from '../../api/types';
+import type { Call, Channel } from '../../api/types';
 import { Avatar, Badge, cx, Dialog, IconButton } from '../../components/ui';
 import { pick } from '../../i18n';
+import { useCallOptions } from '../calls/CallCard';
+import { useCalls } from '../calls/CallContext';
+import { canStartCall } from '../calls/call-utils';
 import { FileList } from '../files/FileList';
 import { useTyping } from '../shell/typing';
 import { channelName, encrypted, postingState } from './channel-utils';
@@ -110,6 +113,16 @@ export function ChannelView({ channel }: { channel: Channel }) {
     [channel.id, qc],
   );
 
+  const calls = useCalls();
+  const callOptions = useCallOptions(channel, null);
+  const startCall = useMutation({
+    mutationFn: async () => {
+      const call = await api<Call>(`/channels/${channel.id}/calls`, { method: 'POST' });
+      // The starter may always end their own call.
+      await calls.join({ kind: 'call', callId: call.id }, { ...callOptions, canEnd: true });
+    },
+  });
+
   const mute = useMutation({
     mutationFn: (mutedUntil: string | null) => api(`/channels/${channel.id}/mute`, { method: 'PUT', body: { mutedUntil } }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.channels }),
@@ -166,6 +179,11 @@ export function ChannelView({ channel }: { channel: Channel }) {
           <IconButton className="sm:hidden" label={t('channel.files')} onClick={() => setParam('tab', tab === 'files' ? null : 'files')}>
             <Files size={22} />
           </IconButton>
+          {canStartCall(channel) && (
+            <IconButton label={t('call.start')} disabled={startCall.isPending || !!calls.active} onClick={() => startCall.mutate()}>
+              <VideoCamera size={22} />
+            </IconButton>
+          )}
           <IconButton label={`${t('channel.members')} (${members.data?.length ?? '…'})`} onClick={() => setMembersOpen(true)}>
             <UsersThree size={22} />
           </IconButton>
@@ -175,6 +193,7 @@ export function ChannelView({ channel }: { channel: Channel }) {
         </header>
 
         {channel.e2eeMode === 'MANDATORY' && <Note tone="navy">{t('channel.e2eeMandatory')}</Note>}
+        {startCall.isError && <Note>{t('call.startFailed')}</Note>}
         {state === 'archived' && <Note>{t('channel.archivedNote')}</Note>}
         {state === 'readOnly' && <Note>{t('channel.readOnly')}</Note>}
         {state === 'threadsOnly' && <Note>{t('channel.threadsOnly')}</Note>}

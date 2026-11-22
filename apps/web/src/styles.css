@@ -109,6 +109,8 @@
   --color-success: var(--pulse-success);
   --color-danger: var(--pulse-danger);
   --color-viewer: var(--pulse-viewer-backdrop);
+  /* Call room tiles: obsidian surfaces in both themes, like the PDF viewer backdrop. */
+  --color-call-tile: var(--puet-obsidian-surface);
   --color-navy: var(--puet-navy-primary);
   --color-terracotta: var(--puet-terracotta-accent);
 

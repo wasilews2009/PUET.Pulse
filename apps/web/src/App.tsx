@@ -12,6 +12,7 @@ const ApprovalsPage = lazy(() => import('./features/approvals/ApprovalsPage'));
 const SettingsPage = lazy(() => import('./features/settings/SettingsPage'));
 const AdminPage = lazy(() => import('./features/admin/AdminPage'));
 const VerifyPage = lazy(() => import('./pages/VerifyPage'));
+const ConsultationsPage = lazy(() => import('./features/consultations/ConsultationsPage'));
 
 export function App() {
   return (
@@ -30,6 +31,7 @@ export function App() {
           <Route path="chats" element={<ChatsPage />} />
           <Route path="chats/:channelId" element={<ChatsPage />} />
           <Route path="files/:fileId" element={<ViewerPage />} />
+          <Route path="consultations" element={<ConsultationsPage />} />
           <Route path="approvals" element={<ApprovalsPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="admin/*" element={<AdminPage />} />

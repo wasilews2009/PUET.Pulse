@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery, type QueryClient } from '@tanstack/react-query';
 import { api } from './client';
-import type { ApprovalRoute, Channel, FileItem, Member, Message, Poll, UserCard } from './types';
+import type { ApprovalRoute, Call, Channel, ConsultationHost, FileItem, Member, Message, Poll, Slot, UserCard } from './types';
 
 export const keys = {
   channels: ['channels'] as const,
@@ -16,6 +16,13 @@ export const keys = {
   certificates: ['certificates'] as const,
   poll: (pollId: string) => ['poll', pollId] as const,
   acks: (messageId: string) => ['acks', messageId] as const,
+  call: (callId: string) => ['call', callId] as const,
+  /** Every consultation list lives under this prefix, so one invalidation refreshes all. */
+  consultations: ['consultations'] as const,
+  myConsultations: ['consultations', 'mine'] as const,
+  hostSlots: (userId: string) => ['consultations', 'host', userId] as const,
+  hosts: ['consultations', 'hosts'] as const,
+  myCourses: ['consultations', 'courses'] as const,
 };
 
 export const useChannels = () => useQuery({ queryKey: keys.channels, queryFn: () => api<Channel[]>('/me/channels'), staleTime: 30_000 });
@@ -134,3 +141,16 @@ export function markDeleted(qc: QueryClient, channelId: string, id: string) {
 }
 
 export const usePoll = (pollId: string) => useQuery({ queryKey: keys.poll(pollId), queryFn: () => api<Poll>(`/polls/${pollId}`), staleTime: 15_000 });
+
+export const useCall = (callId: string) => useQuery({ queryKey: keys.call(callId), queryFn: () => api<Call>(`/calls/${callId}`), staleTime: 15_000 });
+
+export const useMyConsultations = () =>
+  useQuery({ queryKey: keys.myConsultations, queryFn: () => api<{ hosting: Slot[]; booked: Slot[] }>('/consultations/mine'), staleTime: 30_000 });
+
+export const useHostSlots = (userId: string, enabled = true) =>
+  useQuery({ queryKey: keys.hostSlots(userId), queryFn: () => api<Slot[]>(`/users/${userId}/consultations`), enabled, staleTime: 30_000 });
+
+export const useConsultationHosts = () => useQuery({ queryKey: keys.hosts, queryFn: () => api<ConsultationHost[]>('/consultations/hosts'), staleTime: 300_000 });
+
+export const useMyCourses = (enabled: boolean) =>
+  useQuery({ queryKey: keys.myCourses, queryFn: () => api<{ id: string; nameUk: string; nameEn: string }[]>('/consultations/courses'), enabled, staleTime: 300_000 });

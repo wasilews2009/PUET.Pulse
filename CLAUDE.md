@@ -100,6 +100,8 @@ apps/
     src/approvals/     multi-step approval routes
     src/directory/     profile cards, directory search (canSeeInDirectory per row)
     src/polls/         polls, formal votes of collegial bodies, vote protocol PDF
+    src/calls/         LiveKit calls: join tokens, webhook, revalidation (MediaServer)
+    src/consultations/ lecturers' consultation slots and bookings
     scripts/init-ca.ts one-time creation of the internal CA (keys outside the repo)
   web/                 React 19 + Vite PWA client (served next to the API, /api prefix)
     src/api/           fetch client, DTO types, React Query hooks, batched cards
@@ -295,6 +297,28 @@ the same rules. Evaluation order, first deny wins, default deny:
   lowlight's tree is rebuilt as React spans, KaTeX runs with `trust: false` and
   builds DOM nodes. Both load lazily.
 
+**Calls and consultations (Phase 7)**
+
+- Media runs on LiveKit through the `MediaServer` interface (`calls/media-server.ts`);
+  the API never relays media. Join tokens live 5 minutes, carry only the user id
+  (no name, no metadata), cannot publish data or change metadata, and allow only
+  camera, microphone and screen share sources. `READ_ONLY` members join without
+  publishing. Every join is authorized (`call.join`) and re-checked server-side.
+- The LiveKit webhook (`POST /calls/livekit/webhook`) is public but verified by the
+  SDK (signed JWT with the body's SHA-256); entrants are checked by the policy
+  engine again. A job every 60 s removes participants who lost access and ends
+  stale rooms, so offboarding or removal takes effect within a minute.
+- No calls in `MANDATORY` E2EE channels until media E2EE is designed; calls in
+  `OPTIONAL` channels show a notice that media is not end-to-end encrypted. In
+  announcement, emergency, governance and course channels only moderators start
+  calls. One live call per channel and per slot (partial unique indexes).
+- Consultation slots: only staff with `consultation.host` publish them; booking
+  follows the DM rules toward the host (minors, Rectorate, shared course) plus an
+  optional course restriction; the host cannot book their own slot; capacity and
+  state are enforced by DB triggers under a row lock. Topics are visible only to
+  the host. The room opens 10 minutes before the slot and closes 15 minutes after.
+- Realtime events `call.updated` and `consultation.updated` carry ids only.
+
 ## 5. Organizational topology and data model
 
 - **Tenants:** `PUET_MAIN`, `PUET_LYCEUM` (strict minor protection),
@@ -381,8 +405,8 @@ section apply only to marketing pages, not to the messenger app.
 - **Phase 6 (done):** formal votes of collegial bodies (secret / open, quorum,
   protocol PDF), polls in channels, directives with acknowledgement, code
   highlighting and LaTeX in messages.
-- **Phase 7:** WebRTC consultations (LiveKit) with screen sharing, lecturers'
-  consultation schedule.
+- **Phase 7 (done):** WebRTC calls and consultations (LiveKit) with screen
+  sharing, lecturers' consultation schedule with booking.
 - **Phase 8:** corporate bots over REST / webhooks: ЄДЕБО / Деканат, Розклад ПУЕТ,
   Service desk АГР та ІТ (dormitory repair tickets), ЕДО та Канцелярія, admissions
   AI consultant (RAG over the admission rules).

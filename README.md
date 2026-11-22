@@ -43,6 +43,8 @@ On-premise, zero-trust, multi-tenant.
 | **Фаза 6.** Голосування Вченої ради, Ректорату, НМР: таємне й відкрите, кворум, протокол PDF для Вченого секретаря | `apps/api/src/polls` |
 | Опитування в каналах, директиви з підтвердженням «Ознайомлений» | `apps/api/src/polls`, `apps/api/src/messaging` |
 | Код із підсвіткою синтаксису та формули LaTeX у повідомленнях | `apps/web/src/features/chat` |
+| **Фаза 7.** Відеодзвінки й консультації на LiveKit (WebRTC) з демонстрацією екрана, у каналах і особистих чатах | `apps/api/src/calls`, `apps/web/src/features/calls` |
+| Графік консультацій викладачів: слоти (онлайн / в аудиторії), повторення, запис студентів з темою, скасування | `apps/api/src/consultations`, `apps/web/src/features/consultations` |
 
 ## Швидкий старт
 
@@ -66,9 +68,11 @@ pnpm --filter @puet/web dev   # веб-клієнт на http://localhost:5173 (
 описано в `.env.example` (`OIDC_*`, `SESSION_*`, `INTEGRATION_CLIENTS`).
 Нові змінні Фази 3:
 `E2EE_SERVER_NAME`, `JOBS_ENABLED`; Фази 4: `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`,
-`FILE_MAX_MB`, `PKI_CA_*`, `PKI_PUBLIC_URL`, `VERIFY_CODE_SECRET`, `QES_GATEWAY_*`
+`FILE_MAX_MB`, `PKI_CA_*`, `PKI_PUBLIC_URL`, `VERIFY_CODE_SECRET`, `QES_GATEWAY_*`;
+Фази 7: `LIVEKIT_URL`, `LIVEKIT_PUBLIC_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`
+(порожній `LIVEKIT_URL` вимикає дзвінки; вебхук LiveKit налаштуйте на `https://<хост>/api/calls/livekit/webhook`)
 (див. `.env.example`). Після оновлення запустіть `pnpm db:deploy && pnpm db:seed` (Фаза 6 додає нові
-дозволи `poll.create`, `poll.manage`, `message.ack`).
+дозволи `poll.create`, `poll.manage`, `message.ack`; Фаза 7: `call.*`, `consultation.*`).
 
 Внутрішній ЦСК створюється один раз, ключі зберігаються поза репозиторієм:
 

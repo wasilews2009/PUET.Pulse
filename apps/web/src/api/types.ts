@@ -72,6 +72,8 @@ export interface Message {
   /** Set in history for directives: when the current user confirmed, or null. */
   acknowledgedAt?: string | null;
   pollId?: string | null;
+  /** The call this message shows (Phase 7). */
+  callId?: string | null;
   createdAt: string;
   editedAt: string | null;
   expiresAt: string | null;
@@ -102,6 +104,58 @@ export interface Poll {
   me: { voted: boolean; eligible: boolean; options: number[] | null };
   quorumReached: boolean | null;
   adopted: boolean | null;
+}
+
+export interface Call {
+  id: string;
+  kind: 'CHANNEL' | 'CONSULTATION';
+  channelId: string | null;
+  slotId: string | null;
+  messageId: string | null;
+  startedById: string;
+  startedAt: string;
+  endedAt: string | null;
+  participants: string[];
+}
+
+export interface CallJoin {
+  callId: string;
+  url: string;
+  token: string;
+  canPublish: boolean;
+  expiresAt: string;
+}
+
+export interface Booking {
+  id: string;
+  studentId: string;
+  topic: string | null;
+  createdAt: string;
+}
+
+export interface Slot {
+  id: string;
+  hostId: string;
+  startsAt: string;
+  endsAt: string;
+  capacity: number;
+  booked: number;
+  mode: 'ONLINE' | 'OFFLINE';
+  location: string | null;
+  courseOfferingId: string | null;
+  course: { nameUk: string; nameEn: string } | null;
+  note: string | null;
+  status: 'ACTIVE' | 'CANCELLED';
+  myBooking: Booking | null;
+  bookings: Booking[] | null;
+  bookable: boolean;
+  callId: string | null;
+}
+
+export interface ConsultationHost {
+  userId: string;
+  courses: { nameUk: string; nameEn: string }[];
+  upcoming: number;
 }
 
 export interface AckStats {
