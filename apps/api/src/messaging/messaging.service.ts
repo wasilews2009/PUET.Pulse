@@ -126,6 +126,7 @@ export class MessagingService {
             messageTtlSeconds: true,
             archivedAt: true,
             directKey: true,
+            anonymousCase: { select: { alias: true } },
           },
         },
       },
@@ -155,6 +156,8 @@ export class MessagingService {
       archived: c.archivedAt !== null,
       /** For DIRECT chats: the other participant. */
       peerId: c.directKey ? (c.directKey.split(':').find((id) => id !== principal.userId) ?? null) : null,
+      /** Trust rooms of anonymous appeals: the case alias (officers close the appeal). */
+      appealAlias: c.anonymousCase?.alias ?? null,
       role,
       lastReadAt: lastReadAt?.toISOString() ?? null,
       mutedUntil: mutedUntil && mutedUntil > now ? mutedUntil.toISOString() : null,

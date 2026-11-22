@@ -6,7 +6,7 @@ import { Link, useSearchParams } from 'react-router';
 import { api, isUuid } from '../../api/client';
 import { keys, useCard, useMembers, useMessages } from '../../api/queries';
 import type { Call, Channel } from '../../api/types';
-import { Avatar, Badge, cx, Dialog, IconButton } from '../../components/ui';
+import { Avatar, Badge, Button, cx, Dialog, IconButton } from '../../components/ui';
 import { pick } from '../../i18n';
 import { useCallOptions } from '../calls/CallCard';
 import { useCalls } from '../calls/CallContext';
@@ -129,6 +129,17 @@ export function ChannelView({ channel }: { channel: Channel }) {
   });
   const muted = !!channel.mutedUntil;
 
+  // Officers close an anonymous appeal from its trust room.
+  const [closingAppeal, setClosingAppeal] = useState(false);
+  const closeAppeal = useMutation({
+    mutationFn: () => api(`/channels/${channel.id}/appeal/close`, { method: 'POST' }),
+    onSuccess: () => {
+      setClosingAppeal(false);
+      void qc.invalidateQueries({ queryKey: keys.channels });
+    },
+  });
+  const canCloseAppeal = !!channel.appealAlias && !channel.archived && (channel.role === 'MODERATOR' || channel.role === 'OWNER');
+
   return (
     <div className="relative flex min-h-0 flex-1">
       <section aria-label={name} className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -187,6 +198,11 @@ export function ChannelView({ channel }: { channel: Channel }) {
           <IconButton label={`${t('channel.members')} (${members.data?.length ?? '…'})`} onClick={() => setMembersOpen(true)}>
             <UsersThree size={22} />
           </IconButton>
+          {canCloseAppeal && (
+            <Button variant="secondary" size="sm" className="hidden sm:inline-flex" onClick={() => setClosingAppeal(true)}>
+              {t('trust.officerClose')}
+            </Button>
+          )}
           <IconButton label={muted ? t('channel.unmute') : t('channel.mute')} onClick={() => mute.mutate(muted ? null : new Date(Date.now() + 365 * 86_400_000).toISOString())}>
             {muted ? <BellSlash size={22} /> : <Bell size={22} />}
           </IconButton>
@@ -210,6 +226,24 @@ export function ChannelView({ channel }: { channel: Channel }) {
       </section>
 
       {thread && tab === 'messages' && <ThreadPanel channel={channel} rootId={thread} onClose={() => setParam('thread', null)} />}
+
+      <Dialog
+        open={closingAppeal}
+        onClose={() => setClosingAppeal(false)}
+        title={t('trust.closeTitle')}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setClosingAppeal(false)}>
+              {t('app.cancel')}
+            </Button>
+            <Button variant="danger" loading={closeAppeal.isPending} onClick={() => closeAppeal.mutate()}>
+              {t('trust.officerClose')}
+            </Button>
+          </>
+        }
+      >
+        <p className="body-6">{t('trust.officerCloseHint')}</p>
+      </Dialog>
 
       <Dialog open={membersOpen} onClose={() => setMembersOpen(false)} title={`${t('channel.members')} · ${members.data?.length ?? ''}`}>
         <ul className="divide-y divide-line">

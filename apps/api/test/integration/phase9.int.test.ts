@@ -210,7 +210,10 @@ describe.skipIf(!enabled)('Phase 9 end-to-end (PostgreSQL)', () => {
     const appeal = await openAppeal('S1');
     expect(appeal.alias).toMatch(/^[A-Z0-9]{4}$/);
 
-    // The officer's channel list has the room; its members are the pseudonym and the officers.
+    // The officer's channel list has the room, marked with the case alias; its members are the pseudonym and the officers.
+    const officerChannels = await json<{ id: string; appealAlias: string | null }[]>(await as('O').get('/me/channels'));
+    expect(officerChannels.find((c) => c.id === appeal.channelId)?.appealAlias).toBe(appeal.alias);
+    expect((await json<{ id: string }[]>(await as('S1').get('/me/channels'))).map((c) => c.id)).not.toContain(appeal.channelId);
     const members = await json<{ userId: string }[]>(await as('O').get(`/channels/${appeal.channelId}/members`));
     const memberIds = members.map((m) => m.userId);
     expect(memberIds).toContain(appeal.pseudonymId);

@@ -4,7 +4,7 @@ import { keys, markDeleted, upsertMessage } from '../../api/queries';
 import type { Channel, Message } from '../../api/types';
 import { getSocket } from '../../realtime/socket';
 import { useMe } from '../../session/session';
-import { cryptoStarted, getCrypto } from '../../e2ee/crypto';
+import { cryptoStarted, getCrypto, startedPersonas } from '../../e2ee/crypto';
 import { typingStore } from './typing';
 
 /**
@@ -69,6 +69,7 @@ export function useRealtime() {
     };
     const onE2ee = () => {
       if (cryptoStarted(me.userId)) void getCrypto(me.userId).then((c) => c.sync()).catch(() => undefined);
+      for (const p of startedPersonas()) void p.then((c) => c.sync()).catch(() => undefined);
     };
 
     s.on('connect', onConnect);

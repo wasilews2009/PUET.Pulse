@@ -51,6 +51,8 @@ export interface Channel {
   messageTtlSeconds: number | null;
   archived: boolean;
   peerId: string | null;
+  /** Set on the trust room of an anonymous appeal. */
+  appealAlias?: string | null;
   role: MemberRole;
   lastReadAt: string | null;
   mutedUntil: string | null;
@@ -493,4 +495,29 @@ export interface AdmissionsDoc {
   active: boolean;
   chunks: number;
   createdAt: string;
+}
+
+/** Anonymous appeals to the trust services (Phase 9). */
+export interface TrustService {
+  id: string;
+  code: string;
+  nameUk: string;
+  nameEn: string | null;
+}
+
+export interface TrustServices {
+  enabled: boolean;
+  services: TrustService[];
+}
+
+export interface TrustCase {
+  id: string;
+  alias: string;
+  status: 'OPEN' | 'CLOSED';
+  service: { id: string; nameUk: string; nameEn: string | null };
+  channelId: string;
+  /** The pseudonym the client acts as for this appeal (X-Pulse-Persona). */
+  pseudonymId: string;
+  createdAt: string;
+  closedAt: string | null;
 }

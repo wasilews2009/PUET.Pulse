@@ -1,4 +1,4 @@
-import { ArrowLeft, SquaresFour } from '@phosphor-icons/react';
+import { ArrowLeft, ShieldCheck, SquaresFour } from '@phosphor-icons/react';
 import { useTranslation } from 'react-i18next';
 import { NavLink, useParams } from 'react-router';
 import { useBots } from '../../api/queries';
@@ -12,6 +12,7 @@ import { ChancelleryPanel } from './ChancelleryPanel';
 import { DeaneryPanel } from './DeaneryPanel';
 import { SchedulePanel } from './SchedulePanel';
 import { ServiceDeskPanel } from './ServiceDeskPanel';
+import { TrustPanel, useTrustServices } from '../trust/TrustPanel';
 
 function Panel({ bot, unread }: { bot: BotSlug; unread: number }) {
   useMarkRead(bot, unread);
@@ -36,7 +37,10 @@ export default function ServicesPage() {
   const bots = useBots();
   const list = BOT_ORDER.flatMap((slug) => bots.data?.filter((b) => b.bot === slug) ?? []);
   const open = isBotSlug(bot) ? list.find((b) => b.bot === bot) : undefined;
-  const bad = bot !== undefined && (!isBotSlug(bot) || (bots.isSuccess && !open));
+  // Anonymous appeals: shown to staff and students (the API refuses everyone else).
+  const trust = useTrustServices();
+  const trustOpen = bot === 'trust' && trust.isSuccess;
+  const bad = bot !== undefined && !(bot === 'trust' && !trust.isError) && (!isBotSlug(bot) || (bots.isSuccess && !open));
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -55,7 +59,7 @@ export default function ServicesPage() {
           </div>
         )}
         {bots.isError && <InlineError>{t('app.error')}</InlineError>}
-        {bots.isSuccess && list.length === 0 && <EmptyState icon={<SquaresFour size={28} />} title={t('bots.empty')} hint={t('bots.emptyHint')} />}
+        {bots.isSuccess && list.length === 0 && !trust.isSuccess && <EmptyState icon={<SquaresFour size={28} />} title={t('bots.empty')} hint={t('bots.emptyHint')} />}
         <ul className="flex flex-col gap-1">
           {list.map((b) => (
             <li key={b.bot}>
@@ -84,11 +88,49 @@ export default function ServicesPage() {
               </NavLink>
             </li>
           ))}
+          {trust.isSuccess && (
+            <li>
+              <NavLink
+                to="/services/trust"
+                className={({ isActive }) =>
+                  cx('flex items-center gap-3 rounded-xl px-3 py-3 transition-colors duration-300 ease-pulse', isActive ? 'bg-primary text-on-primary' : 'hover:bg-surface-hover')
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    <span className={cx('flex size-10 shrink-0 items-center justify-center rounded-xl', isActive ? 'bg-white/15' : 'bg-canvas text-primary')}>
+                      <ShieldCheck size={22} aria-hidden="true" />
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate title-4">{t('trust.nav')}</span>
+                      <span className={cx('truncate caption-5', isActive ? 'text-on-primary/80' : 'text-muted')}>{t('trust.about')}</span>
+                    </span>
+                  </>
+                )}
+              </NavLink>
+            </li>
+          )}
         </ul>
       </aside>
       <main id="main" className={cx('min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-canvas', bot ? 'flex' : 'hidden md:flex')}>
         {bad ? (
           <NotFoundPage />
+        ) : trustOpen ? (
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6">
+            <header className="flex items-center gap-3">
+              <NavLink to="/services" aria-label={t('app.back')} className="inline-flex size-10 items-center justify-center rounded-lg text-muted hover:bg-surface-hover md:hidden">
+                <ArrowLeft size={20} aria-hidden="true" />
+              </NavLink>
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary text-on-primary">
+                <ShieldCheck size={24} aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="heading-5">{t('trust.nav')}</h2>
+                <p className="body-6 text-muted">{t('trust.about')}</p>
+              </div>
+            </header>
+            <TrustPanel />
+          </div>
         ) : open ? (
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6">
             <header className="flex items-center gap-3">
