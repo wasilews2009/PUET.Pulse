@@ -31,7 +31,7 @@ import { EXTERNAL_SIGNATURE_PROVIDER, ExternalQesAdapter } from '../../src/pki/s
 import { createRootCa, fromPem, loadCa, type CaMaterial } from '../../src/pki/x509';
 import { MemoryRealtimeBus, REALTIME_BUS } from '../../src/realtime/realtime.bus';
 import { MemorySessionStore, SESSION_STORE } from '../../src/session/session.store';
-import { maliciousPdf, plainPdf } from '../fixtures/pdfs';
+import { maliciousPdf, outlinedPdf, plainPdf } from '../fixtures/pdfs';
 
 const enabled = process.env.RUN_DB_TESTS === '1' && !!process.env.DATABASE_URL;
 const WEB = 'https://pulse.test';
@@ -322,6 +322,45 @@ describe.skipIf(!enabled)('Phase 4 end-to-end (PostgreSQL)', () => {
     expect(seen.map((a) => a.id)).toEqual([shared.id]);
     expect((await as('S2').patch(`/files/${f.id}/annotations/${shared.id}`, { text: 'hacked' })).status).toBe(403);
     expect((await as('S1').patch(`/files/${f.id}/annotations/${shared.id}`, { text: 'Див. п. 4' })).status).toBe(200);
+  });
+
+  // ── Phase 9: viewer navigation and streaming ───────────────────
+
+  it('viewer: table of contents from the original outline; byte ranges for ordinary PDFs, never for watermarked ones', async () => {
+    const f = await uploadReady('S1', await outlinedPdf(), 'Кошторис.pdf');
+    const meta = (await (await as('S2').get(`/files/${f.id}`)).json()) as { outline: { title: string; page: number }[] };
+    expect(meta.outline.map((e) => e.page)).toEqual([1, 2, 3, 3]);
+
+    const whole = await as('S2').get(`/files/${f.id}/view`);
+    expect(whole.headers.get('accept-ranges')).toBe('bytes');
+    const size = Number(whole.headers.get('content-length'));
+    const all = Buffer.from(await whole.arrayBuffer());
+    expect(all.length).toBe(size);
+    const part = await http(`/files/${f.id}/view`, { cookie: cookies.S2!, headers: { range: 'bytes=0-1023' } });
+    expect(part.status).toBe(206);
+    expect(part.headers.get('content-range')).toBe(`bytes 0-1023/${size}`);
+    expect(part.headers.get('cache-control')).toContain('no-store');
+    expect(Buffer.from(await part.arrayBuffer()).equals(all.subarray(0, 1024))).toBe(true);
+    expect((await http(`/files/${f.id}/view`, { cookie: cookies.S2!, headers: { range: `bytes=${size}-` } })).status).toBe(416);
+    // IDOR: ranges are authorized like any other view.
+    expect((await http(`/files/${f.id}/view`, { cookie: cookies.S3!, headers: { range: 'bytes=0-10' } })).status).toBe(403);
+
+    const secret = await uploadReady('L', await plainPdf('Salary'), 'Зарплата.pdf', true);
+    const marked = await http(`/files/${secret.id}/view`, { cookie: cookies.S1!, headers: { range: 'bytes=0-9' } });
+    expect(marked.status).toBe(200);
+    expect(marked.headers.get('accept-ranges')).toBeNull();
+  });
+
+  it('IDOR: bookmarks are personal; nobody lists or deletes someone else\'s', async () => {
+    const f = await uploadReady('S1', await plainPdf('Bookmarks', 3), 'bookmarks.pdf');
+    const b = (await (await as('S1').post(`/files/${f.id}/bookmarks`, { page: 2, label: 'Таблиця 2' })).json()) as { id: string };
+    expect((await as('S1').post(`/files/${f.id}/bookmarks`, { page: 9 })).status).toBe(404);
+    expect((await as('S1').post(`/files/${f.id}/bookmarks`, { page: 2, label: 'Таблиця 2.1' })).status).toBe(201);
+    expect(((await (await as('S1').get(`/files/${f.id}/bookmarks`)).json()) as { label: string }[]).map((x) => x.label)).toEqual(['Таблиця 2.1']);
+    expect(await (await as('S2').get(`/files/${f.id}/bookmarks`)).json()).toEqual([]);
+    expect((await http(`/files/${f.id}/bookmarks/${b.id}`, { method: 'DELETE', cookie: cookies.S2! })).status).toBe(403);
+    expect((await as('S3').get(`/files/${f.id}/bookmarks`)).status).toBe(403);
+    expect((await http(`/files/${f.id}/bookmarks/${b.id}`, { method: 'DELETE', cookie: cookies.S1! })).status).toBe(200);
   });
 
   // ── Internal CA and УЕП signatures ──────────────────────────────

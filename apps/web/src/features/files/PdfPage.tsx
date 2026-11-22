@@ -28,6 +28,7 @@ export function PdfPage({
   activeId,
   onSelect,
   label,
+  marks = [],
 }: {
   doc: PdfDoc;
   pageNumber: number;
@@ -38,6 +39,8 @@ export function PdfPage({
   activeId: string | null;
   onSelect: (id: string) => void;
   label: string;
+  /** Search matches on this page, outlined in terracotta. */
+  marks?: Rect[];
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
@@ -118,6 +121,20 @@ export function PdfPage({
               />
             )),
           )}
+          {marks.map((r, i) => (
+            <rect
+              key={`m-${i}`}
+              x={r.x}
+              y={r.y}
+              width={r.w}
+              height={r.h}
+              fill="rgba(223, 72, 39, 0.18)"
+              stroke="#DF4827"
+              strokeWidth={0.0015}
+              vectorEffect="non-scaling-stroke"
+              pointerEvents="none"
+            />
+          ))}
           {draft && (
             <rect
               x={Math.min(draft.x0, draft.x1)}

@@ -540,6 +540,7 @@ model User {
   approvalRoutes   ApprovalRoute[]          @relation("ApprovalRouteCreator")
   signatures       DocumentSignature[]      @relation("DocumentSigner")
   annotations      PdfAnnotation[]          @relation("AnnotationAuthor")
+  fileBookmarks    FileBookmark[]
   devices          Device[]
   crossSigningKeys CrossSigningKey[]
   keyBackups       KeyBackupVersion[]
@@ -968,6 +969,9 @@ model FileObject {
   servedSha256 String?        @map("served_sha256")
   servedSize   BigInt?        @map("served_size")
   pageCount    Int?           @map("page_count")
+  /// Table of contents read from the original outline during CDR: [{ title, page, level }].
+  /// Plain data only; the served PDF itself never carries an outline or actions.
+  outline      Json?
   /// DLP view-only: no download, no print, no copy; watermarked rendering.
   confidential Boolean        @default(false)
   createdAt    DateTime       @default(now()) @map("created_at")
@@ -977,6 +981,7 @@ model FileObject {
   message     Message?            @relation(fields: [messageId], references: [id], onDelete: SetNull)
   uploader    User                @relation(fields: [uploaderId], references: [id], onDelete: Restrict)
   annotations PdfAnnotation[]
+  bookmarks   FileBookmark[]
   signatures  DocumentSignature[]
   approvals   ApprovalRoute[]
 
@@ -1002,6 +1007,22 @@ model PdfAnnotation {
 
   @@index([fileId, page])
   @@map("pdf_annotations")
+}
+
+/// Personal page bookmarks in the Secure PDF Viewer (visible to their owner only).
+model FileBookmark {
+  id        String   @id @default(uuid()) @db.Uuid
+  fileId    String   @map("file_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  page      Int
+  label     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  file FileObject @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([fileId, userId, page])
+  @@map("file_bookmarks")
 }
 
 // ─────────────────────────── PKI & signatures ───────────────────────────

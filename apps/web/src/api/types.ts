@@ -198,6 +198,21 @@ export interface FileItem {
   pageCount: number | null;
   sha256: string | null;
   createdAt: string;
+  /** Table of contents read from the original outline (only on GET /files/:id). */
+  outline?: OutlineEntry[];
+}
+
+export interface OutlineEntry {
+  title: string;
+  page: number;
+  level: number;
+}
+
+export interface Bookmark {
+  id: string;
+  page: number;
+  label: string | null;
+  createdAt: string;
 }
 
 export type AnnotationKind = 'highlight' | 'underline' | 'strike' | 'comment' | 'note';

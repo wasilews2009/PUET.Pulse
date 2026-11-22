@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { Principal, Resource } from '@puet/policy-engine';
 import { z } from 'zod';
 import { PrismaService } from '../prisma/prisma.service';
@@ -23,6 +23,15 @@ export const annotationInput = z
   .strict();
 
 export const annotationUpdate = annotationInput.partial().strict();
+
+export const bookmarkInput = z
+  .object({
+    page: z.number().int().min(1).max(2000),
+    label: z.string().trim().min(1).max(120).optional(),
+  })
+  .strict();
+
+const MAX_BOOKMARKS = 200;
 
 /** The file's comments, highlights and notes. The PDF bytes are never modified. */
 @Injectable()
@@ -74,6 +83,43 @@ export class AnnotationsService {
   async remove(principal: Principal, file: Resource, annotationId: string) {
     const a = await this.own(principal, file, annotationId);
     await this.prisma.pdfAnnotation.delete({ where: { id: a.id } });
+    return { deleted: true };
+  }
+
+  // ───────────── Personal bookmarks ─────────────
+
+  private bookmarkDto(b: { id: string; page: number; label: string | null; createdAt: Date }) {
+    return { id: b.id, page: b.page, label: b.label, createdAt: b.createdAt.toISOString() };
+  }
+
+  async listBookmarks(principal: Principal, file: Resource) {
+    const rows = await this.prisma.fileBookmark.findMany({
+      where: { fileId: file.id!, userId: principal.userId, file: { tenantId: file.tenantId } },
+      orderBy: { page: 'asc' },
+      take: MAX_BOOKMARKS,
+    });
+    return rows.map((b) => this.bookmarkDto(b));
+  }
+
+  /** Adds a bookmark, or renames the one already on that page. */
+  async addBookmark(principal: Principal, file: Resource, input: z.infer<typeof bookmarkInput>) {
+    const f = await this.prisma.fileObject.findFirstOrThrow({ where: { id: file.id!, tenantId: file.tenantId }, select: { pageCount: true, mimeType: true } });
+    if (f.mimeType !== 'application/pdf' || !f.pageCount || input.page > f.pageCount) throw new NotFoundException('Page not found');
+    const count = await this.prisma.fileBookmark.count({ where: { fileId: file.id!, userId: principal.userId } });
+    const existing = await this.prisma.fileBookmark.findUnique({ where: { fileId_userId_page: { fileId: file.id!, userId: principal.userId, page: input.page } } });
+    if (!existing && count >= MAX_BOOKMARKS) throw new ConflictException('Too many bookmarks');
+    const row = await this.prisma.fileBookmark.upsert({
+      where: { fileId_userId_page: { fileId: file.id!, userId: principal.userId, page: input.page } },
+      create: { fileId: file.id!, userId: principal.userId, page: input.page, label: input.label ?? null },
+      update: { label: input.label ?? null },
+    });
+    return this.bookmarkDto(row);
+  }
+
+  async removeBookmark(principal: Principal, file: Resource, bookmarkId: string) {
+    // Scoped to the caller: someone else's bookmark looks like a missing one.
+    const res = await this.prisma.fileBookmark.deleteMany({ where: { id: bookmarkId, fileId: file.id!, userId: principal.userId } });
+    if (res.count === 0) throw new ForbiddenException('Access denied');
     return { deleted: true };
   }
 }

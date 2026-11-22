@@ -2,9 +2,11 @@ import {
   PDFArray,
   PDFDict,
   PDFDocument,
+  PDFHexString,
   PDFName,
   PDFRef,
   PDFStream,
+  PDFString,
   type PDFObject,
 } from 'pdf-lib';
 
@@ -71,10 +73,24 @@ const ACTIVE_ACTION_TYPES = new Set([
 
 export class PdfRejectedError extends Error {}
 
+export interface OutlineEntry {
+  title: string;
+  /** 1-based page number in the served (sanitized) copy. */
+  page: number;
+  /** 0 for top-level entries. */
+  level: number;
+}
+
 export interface SanitizedPdf {
   bytes: Buffer;
   pageCount: number;
+  /** The original table of contents as plain data (the served PDF carries no outline). */
+  outline: OutlineEntry[];
 }
+
+export const MAX_OUTLINE_ENTRIES = 500;
+const MAX_OUTLINE_DEPTH = 8;
+const MAX_TITLE = 200;
 
 export async function sanitizePdf(input: Buffer): Promise<SanitizedPdf> {
   try {
@@ -95,6 +111,8 @@ async function rebuild(input: Buffer): Promise<SanitizedPdf> {
   }
   const pageCount = src.getPageCount();
   if (pageCount === 0 || pageCount > MAX_PDF_PAGES) throw new PdfRejectedError('Unsupported page count');
+
+  const outline = extractOutline(src);
 
   // Keep what a filled form shows, then drop the form itself.
   try {
@@ -121,7 +139,65 @@ async function rebuild(input: Buffer): Promise<SanitizedPdf> {
   const check = await PDFDocument.load(bytes, { updateMetadata: false });
   const leftovers = findActiveContent(check);
   if (leftovers.length > 0) throw new PdfRejectedError('Active content survived sanitization');
-  return { bytes, pageCount };
+  return { bytes, pageCount, outline };
+}
+
+/**
+ * Reads the outline (bookmarks) of the original as plain data: a title and the
+ * page an entry points to, nothing else. Only explicit destinations and GoTo
+ * actions inside this document are followed; named destinations, remote GoTo,
+ * JavaScript or URI actions are ignored. Titles are control-character free text
+ * that the client renders as text. Never throws: a broken outline is dropped.
+ */
+export function extractOutline(doc: PDFDocument): OutlineEntry[] {
+  try {
+    const pageIndex = new Map<string, number>();
+    doc.getPages().forEach((p, i) => pageIndex.set(p.ref.toString(), i + 1));
+    const lookupDict = (o: PDFObject | undefined) => {
+      const v = o instanceof PDFRef ? doc.context.lookup(o) : o;
+      return v instanceof PDFDict ? v : undefined;
+    };
+    const root = lookupDict(doc.catalog.get(PDFName.of('Outlines')));
+    if (!root) return [];
+
+    const pageOf = (item: PDFDict): number | null => {
+      let dest = item.get(PDFName.of('Dest'));
+      if (!dest) {
+        const action = lookupDict(item.get(PDFName.of('A')));
+        const kind = action?.get(PDFName.of('S'));
+        if (!(kind instanceof PDFName) || kind.decodeText() !== 'GoTo') return null;
+        dest = action!.get(PDFName.of('D'));
+      }
+      const arr = dest instanceof PDFRef ? doc.context.lookup(dest) : dest;
+      if (!(arr instanceof PDFArray) || arr.size() === 0) return null;
+      const target = arr.get(0);
+      return target instanceof PDFRef ? (pageIndex.get(target.toString()) ?? null) : null;
+    };
+    const titleOf = (item: PDFDict): string | null => {
+      const t = item.get(PDFName.of('Title'));
+      if (!(t instanceof PDFString || t instanceof PDFHexString)) return null;
+      const clean = t.decodeText().replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim();
+      return clean ? clean.slice(0, MAX_TITLE) : null;
+    };
+
+    const out: OutlineEntry[] = [];
+    const seen = new Set<PDFDict>();
+    const walk = (first: PDFObject | undefined, level: number) => {
+      let item = lookupDict(first);
+      while (item && !seen.has(item) && out.length < MAX_OUTLINE_ENTRIES) {
+        seen.add(item);
+        const title = titleOf(item);
+        const page = pageOf(item);
+        if (title && page) out.push({ title, page, level });
+        if (level + 1 < MAX_OUTLINE_DEPTH) walk(item.get(PDFName.of('First')), level + 1);
+        item = lookupDict(item.get(PDFName.of('Next')));
+      }
+    };
+    walk(root.get(PDFName.of('First')), 0);
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 function scrub(doc: PDFDocument) {

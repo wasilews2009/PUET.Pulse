@@ -7,6 +7,7 @@ import {
   PayloadTooLargeException,
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
+import { Prisma } from '@puet/database';
 import type { Principal, Resource } from '@puet/policy-engine';
 import { E2eeMode } from '@puet/shared';
 import { createHash, randomUUID } from 'node:crypto';
@@ -19,7 +20,7 @@ import { REALTIME_BUS, type RealtimeBus } from '../realtime/realtime.bus';
 import { contentDisposition, safeFileName, sniffType, VIEWABLE_TYPES } from './file-types';
 import { MALWARE_SCANNER, type MalwareScanner } from './malware-scanner';
 import { OBJECT_STORE, type ObjectStore } from './object-store';
-import { PdfRejectedError, sanitizePdf } from './pdf-sanitizer';
+import { PdfRejectedError, sanitizePdf, type OutlineEntry } from './pdf-sanitizer';
 import { watermarkPdf } from './watermark';
 
 const MAX_SCAN_ATTEMPTS = 5;
@@ -84,6 +85,56 @@ export interface ServedFile {
   body: Buffer;
   contentType: string;
   disposition: string;
+  /** Byte ranges may be served (PDF.js loads only the pages it shows). Never for watermarked copies. */
+  ranges?: boolean;
+}
+
+/** Who is looking: the watermark of a confidential view names them, their id and their address. */
+export interface ViewContext {
+  ip: string | null;
+}
+
+/**
+ * Short-lived cache of verified served bytes, so a viewer loading a large PDF
+ * page by page (HTTP range requests) does not re-read and re-hash the object
+ * for every chunk. Bounded by size and age; holds only non-confidential copies.
+ */
+export class ServedBytesCache {
+  private readonly entries = new Map<string, { body: Buffer; at: number }>();
+  private total = 0;
+
+  constructor(
+    private readonly maxBytes = 128 * 1024 * 1024,
+    private readonly ttlMs = 120_000,
+  ) {}
+
+  get(key: string, now = Date.now()): Buffer | undefined {
+    const e = this.entries.get(key);
+    if (!e) return undefined;
+    if (now - e.at > this.ttlMs) {
+      this.drop(key);
+      return undefined;
+    }
+    return e.body;
+  }
+
+  set(key: string, body: Buffer, now = Date.now()) {
+    if (body.length > this.maxBytes / 4) return;
+    this.drop(key);
+    this.entries.set(key, { body, at: now });
+    this.total += body.length;
+    for (const k of this.entries.keys()) {
+      if (this.total <= this.maxBytes) break;
+      this.drop(k);
+    }
+  }
+
+  private drop(key: string) {
+    const e = this.entries.get(key);
+    if (!e) return;
+    this.total -= e.body.length;
+    this.entries.delete(key);
+  }
 }
 
 /** Reads a raw request body with a hard size limit (uploads are application/octet-stream). */
@@ -111,6 +162,7 @@ export async function readRawBody(req: IncomingMessage & { body?: unknown }, max
 @Injectable()
 export class FilesService {
   private readonly logger = new Logger(FilesService.name);
+  private readonly cache = new ServedBytesCache();
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -240,6 +292,7 @@ export class FilesService {
             servedSha256: sha256(clean.bytes),
             servedSize: BigInt(clean.bytes.length),
             pageCount: clean.pageCount,
+            outline: clean.outline.length > 0 ? (clean.outline as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           },
         });
       } catch (e) {
@@ -280,9 +333,10 @@ export class FilesService {
     await this.bus.emitToUsers(to, event, { fileId: file.id, channelId: file.channelId });
   }
 
+  /** One file with its table of contents (read from the original outline during CDR). */
   async get(fileResource: Resource) {
     const f = await this.prisma.fileObject.findFirstOrThrow({ where: { id: fileResource.id!, tenantId: fileResource.tenantId } });
-    return toFileDto(f);
+    return { ...toFileDto(f), outline: Array.isArray(f.outline) ? (f.outline as unknown as OutlineEntry[]) : [] };
   }
 
   async listChannel(channel: Resource, limit = 100) {
@@ -300,21 +354,34 @@ export class FilesService {
     if (fileStatus(file) !== 'READY') throw new ConflictException('The file is not available');
     const key = file.mimeType === 'application/pdf' ? file.sanitizedKey : file.storageKey;
     if (!key) throw new ConflictException('The file is not available');
+    const cacheKey = `${file.id}:${file.servedSha256}`;
+    const cached = file.confidential ? undefined : this.cache.get(cacheKey);
+    if (cached) return { file, body: cached };
     const body = await this.store.get('attachments', key);
     if (!body || sha256(body) !== file.servedSha256) throw new ConflictException('The file is not available');
+    if (!file.confidential) this.cache.set(cacheKey, body);
     return { file, body };
   }
 
-  /** Inline rendering for the built-in viewer. Confidential PDFs get a per-viewer watermark. */
-  async view(principal: Principal, fileResource: Resource, now = new Date()): Promise<ServedFile> {
+  /**
+   * Inline rendering for the built-in viewer. Confidential PDFs get a per-viewer
+   * watermark (name, corporate id, IP address, time) and are served whole; other
+   * PDFs may be read in byte ranges so only the pages on screen are fetched.
+   */
+  async view(principal: Principal, fileResource: Resource, ctx: ViewContext = { ip: null }, now = new Date()): Promise<ServedFile> {
     const { file, body } = await this.servedBytes(fileResource);
     if (!VIEWABLE_TYPES.has(file.mimeType)) throw new UnsupportedMediaTypeException('This file can only be downloaded');
     let out = body;
     if (file.confidential) {
       const viewer = await this.prisma.user.findUniqueOrThrow({ where: { id: principal.userId }, select: { fullNameUk: true, corporateId: true } });
-      out = await watermarkPdf(body, { fullName: viewer.fullNameUk, marker: viewer.corporateId }, now, 'ПУЕТ · Конфіденційно');
+      out = await watermarkPdf(body, { fullName: viewer.fullNameUk, marker: viewer.corporateId, ip: ctx.ip }, now, 'ПУЕТ · Конфіденційно');
     }
-    return { body: out, contentType: file.mimeType, disposition: contentDisposition('inline', file.fileName) };
+    return {
+      body: out,
+      contentType: file.mimeType,
+      disposition: contentDisposition('inline', file.fileName),
+      ranges: !file.confidential && file.mimeType === 'application/pdf',
+    };
   }
 
   async download(fileResource: Resource): Promise<ServedFile> {

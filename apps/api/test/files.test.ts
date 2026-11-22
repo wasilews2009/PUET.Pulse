@@ -1,12 +1,14 @@
 import { createServer, type Server } from 'node:net';
 import type { AddressInfo } from 'node:net';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, PDFName } from 'pdf-lib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { contentDisposition, safeFileName, sniffType } from '../src/files/file-types';
 import { ClamdScanner, parseClamdReply } from '../src/files/malware-scanner';
+import { parseRange } from '../src/files/files.controller';
+import { ServedBytesCache } from '../src/files/files.service';
 import { findActiveContent, PdfRejectedError, sanitizePdf } from '../src/files/pdf-sanitizer';
-import { watermarkPdf } from '../src/files/watermark';
-import { maliciousPdf, plainPdf } from './fixtures/pdfs';
+import { printableIp, watermarkPdf } from '../src/files/watermark';
+import { maliciousPdf, outlinedPdf, plainPdf } from './fixtures/pdfs';
 
 const EICAR = 'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*';
 
@@ -44,6 +46,60 @@ describe('PDF CDR (Content Disarm & Reconstruction)', () => {
     const marked = await watermarkPdf(clean.bytes, { fullName: "Мар'яна Іваненко", marker: 'EMP-0042' }, new Date('2026-11-23T10:00:00Z'), 'ПУЕТ · Конфіденційно');
     expect(marked.length).toBeGreaterThan(clean.bytes.length);
     expect(findActiveContent(await PDFDocument.load(marked))).toEqual([]);
+  });
+});
+
+describe('Secure Viewer navigation (Phase 9)', () => {
+  it('outline survives CDR as plain data only: titles and pages, no actions, no outline in the served PDF', async () => {
+    const clean = await sanitizePdf(await outlinedPdf());
+    expect(clean.outline).toEqual([
+      { title: 'Розділ 1. Загальні положення', page: 1, level: 0 },
+      { title: '1.1 Scope', page: 2, level: 1 },
+      // Bidi override and control characters are neutralized (no "exe.pdf" spoofing in the UI).
+      { title: 'Budget exe.pdf', page: 3, level: 0 },
+      { title: 'Annex', page: 3, level: 0 },
+    ]);
+    const served = await PDFDocument.load(clean.bytes);
+    expect(findActiveContent(served)).toEqual([]);
+    expect(served.catalog.get(PDFName.of('Outlines'))).toBeUndefined();
+    expect(clean.bytes.toString('latin1')).not.toContain('app.alert');
+  });
+
+  it('a PDF without an outline gives an empty table of contents', async () => {
+    expect((await sanitizePdf(await plainPdf())).outline).toEqual([]);
+  });
+
+  it('range requests: single ranges only, bounded to the file', () => {
+    expect(parseRange(undefined, 100)).toBeNull();
+    expect(parseRange('bytes=0-9', 100)).toEqual({ start: 0, end: 9 });
+    expect(parseRange('bytes=90-', 100)).toEqual({ start: 90, end: 99 });
+    expect(parseRange('bytes=-10', 100)).toEqual({ start: 90, end: 99 });
+    expect(parseRange('bytes=50-500', 100)).toEqual({ start: 50, end: 99 });
+    for (const bad of ['bytes=100-', 'bytes=5-1', 'bytes=0-1,5-9', 'items=0-1', 'bytes=-', 'bytes=-0']) expect(parseRange(bad, 100)).toBe('invalid');
+  });
+
+  it('the verified-bytes cache is bounded by size and age', () => {
+    const cache = new ServedBytesCache(100, 1000);
+    cache.set('a', Buffer.alloc(20), 0);
+    cache.set('b', Buffer.alloc(20), 0);
+    cache.set('big', Buffer.alloc(60), 0); // over a quarter of the budget: never cached
+    expect(cache.get('big', 0)).toBeUndefined();
+    expect(cache.get('a', 500)?.length).toBe(20);
+    expect(cache.get('a', 1500)).toBeUndefined();
+    for (const k of ['c', 'd', 'e', 'f', 'g']) cache.set(k, Buffer.alloc(20), 0);
+    expect(cache.get('b', 0)).toBeUndefined(); // evicted, oldest first
+    expect(cache.get('g', 0)?.length).toBe(20);
+  });
+
+  it('watermark IP: only a real IPv4 / IPv6 literal is printed', async () => {
+    expect(printableIp('10.1.2.3')).toBe('10.1.2.3');
+    expect(printableIp('::ffff:192.168.0.7')).toBe('192.168.0.7');
+    expect(printableIp('2001:db8::1')).toBe('2001:db8::1');
+    for (const bad of [null, undefined, '', 'evil<script>', '1.2.3.4 · Approved', 'localhost']) expect(printableIp(bad)).toBeNull();
+    const clean = await sanitizePdf(await plainPdf());
+    const marked = await watermarkPdf(clean.bytes, { fullName: 'Олена Коваль', marker: 'EMP-0042', ip: '10.1.2.3' }, new Date('2026-11-23T10:00:00Z'), 'ПУЕТ');
+    const plain = await watermarkPdf(clean.bytes, { fullName: 'Олена Коваль', marker: 'EMP-0042' }, new Date('2026-11-23T10:00:00Z'), 'ПУЕТ');
+    expect(marked.length).toBeGreaterThan(plain.length);
   });
 });
 

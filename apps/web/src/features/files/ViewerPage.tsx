@@ -1,4 +1,4 @@
-import { ArrowLeft, CaretLeft, CaretRight, Highlighter, Lock, MagnifyingGlassMinus, MagnifyingGlassPlus, NotePencil, PenNib, ShieldCheck, Stamp, Trash } from '@phosphor-icons/react';
+import { ArrowLeft, BookmarkSimple, CaretLeft, CaretRight, Highlighter, SidebarSimple, Lock, MagnifyingGlassMinus, MagnifyingGlassPlus, NotePencil, PenNib, ShieldCheck, Stamp, Trash } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -13,7 +13,9 @@ import { useMe } from '../../session/session';
 import { NewRouteDialog, RouteView, useRoutes } from '../approvals/RoutePanel';
 import { SignDialog } from '../signatures/SignDialog';
 import { SignedBadge } from '../signatures/Protocol';
-import { openPdf, type PdfDoc } from './pdf';
+import { openPdf, openPdfStream, type PdfDoc } from './pdf';
+import { matchRects } from './search';
+import { pageText, useBookmarks, useToggleBookmark, ViewerNav, type NavTab } from './ViewerNav';
 import { PdfPage } from './PdfPage';
 import { useFileBytes } from './useFileBytes';
 
@@ -73,7 +75,11 @@ function Viewer({ fileId }: { fileId: string }) {
   const qc = useQueryClient();
   const meta = useQuery({ queryKey: keys.file(fileId), queryFn: () => api<FileItem>(`/files/${fileId}`), retry: false });
   const isPdf = meta.data?.mimeType === 'application/pdf';
-  const bytes = useFileBytes(fileId, !!meta.data && meta.data.status === 'READY' && meta.data.viewable);
+  const confidential = meta.data?.confidential === true;
+  const ready = !!meta.data && meta.data.status === 'READY' && meta.data.viewable;
+  // Ordinary PDFs stream page by page (range requests); watermarked copies and images come whole.
+  const streamed = ready && isPdf && !confidential;
+  const bytes = useFileBytes(fileId, ready && !streamed);
   const [doc, setDoc] = useState<PdfDoc | null>(null);
   const [docError, setDocError] = useState(false);
   const [page, setPage] = useState(1);
@@ -86,6 +92,12 @@ function Viewer({ fileId }: { fileId: string }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [signOpen, setSignOpen] = useState(false);
   const [routeOpen, setRouteOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.('(min-width: 1024px)').matches);
+  const [navTab, setNavTab] = useState<NavTab>('pages');
+  const [query, setQuery] = useState('');
+  const [marks, setMarks] = useState<Rect[]>([]);
+  const bookmarks = useBookmarks(fileId, isPdf);
+  const toggleBookmark = useToggleBookmark(fileId);
 
   const annotations = useQuery({ queryKey: ['annotations', fileId], queryFn: () => api<Annotation[]>(`/files/${fileId}/annotations`), enabled: isPdf });
   const signatures = useQuery({ queryKey: keys.signatures(fileId), queryFn: () => api<Signature[]>(`/files/${fileId}/signatures`), enabled: !!meta.data });
@@ -99,11 +111,11 @@ function Viewer({ fileId }: { fileId: string }) {
   });
 
   useEffect(() => {
-    if (!bytes.data || !isPdf) return;
+    if (!isPdf || !ready || (!streamed && !bytes.data)) return;
     let alive = true;
     let opened: PdfDoc | null = null;
     // pdf.js transfers the buffer to its worker, so hand it a copy.
-    openPdf(bytes.data.bytes.slice())
+    (streamed ? openPdfStream(fileId) : openPdf(bytes.data!.bytes.slice()))
       .then((d) => {
         opened = d;
         if (alive) setDoc(d);
@@ -114,7 +126,25 @@ function Viewer({ fileId }: { fileId: string }) {
       alive = false;
       void opened?.destroy();
     };
-  }, [bytes.data, isPdf]);
+  }, [bytes.data, isPdf, ready, streamed, fileId]);
+
+  // Outline the search matches on the page on screen.
+  useEffect(() => {
+    if (!doc || query.trim().length < 2) {
+      setMarks([]);
+      return;
+    }
+    let alive = true;
+    void Promise.all([pageText(doc, page), doc.getPage(page)])
+      .then(([{ items }, p]) => {
+        const vp = p.getViewport({ scale: 1 });
+        if (alive) setMarks(matchRects(items, query, vp.width, vp.height));
+      })
+      .catch(() => alive && setMarks([]));
+    return () => {
+      alive = false;
+    };
+  }, [doc, page, query]);
 
   const imageUrl = useMemo(() => {
     if (!bytes.data || isPdf || !bytes.data.type.startsWith('image/')) return null;
@@ -154,6 +184,11 @@ function Viewer({ fileId }: { fileId: string }) {
   const pageAnnotations = (annotations.data ?? []).filter((a) => a.page === page);
   const pendingRoute = routes.data?.find((r) => r.status === 'PENDING');
   const back = f?.channelId ? `/chats/${f.channelId}?tab=files` : '/chats';
+  const bookmarkHere = bookmarks.data?.find((b) => b.page === page);
+  const goTo = (p: number) => {
+    setPage(Math.min(Math.max(1, p), total));
+    if (typeof window !== 'undefined' && !window.matchMedia?.('(min-width: 1024px)').matches) setNavOpen(false);
+  };
 
   return (
     <main id="main" className={cx('flex min-h-0 flex-1 flex-col bg-viewer text-white lg:flex-row', f?.confidential && 'pulse-no-copy pulse-no-print')}>
@@ -191,7 +226,25 @@ function Viewer({ fileId }: { fileId: string }) {
         </header>
 
         {isPdf && doc && (
-          <div className="flex items-center justify-center gap-1 border-b border-white/10 bg-[#121619] px-2 py-1">
+          <div className="flex flex-wrap items-center justify-center gap-1 border-b border-white/10 bg-[#121619] px-2 py-1">
+            <IconButton
+              label={t('viewer.navigation')}
+              aria-pressed={navOpen}
+              className={cx('text-white hover:bg-white/10 hover:text-white', navOpen && 'bg-white/15')}
+              onClick={() => setNavOpen((v) => !v)}
+            >
+              <SidebarSimple size={20} />
+            </IconButton>
+            <IconButton
+              label={bookmarkHere ? t('viewer.removeBookmark', { page }) : t('viewer.addBookmark', { page })}
+              aria-pressed={!!bookmarkHere}
+              className="text-white hover:bg-white/10 hover:text-white"
+              disabled={toggleBookmark.isPending}
+              onClick={() => toggleBookmark.mutate({ page, existing: bookmarkHere })}
+            >
+              <BookmarkSimple size={20} weight={bookmarkHere ? 'fill' : 'regular'} className={bookmarkHere ? 'text-accent' : undefined} />
+            </IconButton>
+            <span className="mx-1 h-6 w-px bg-white/10" aria-hidden="true" />
             <IconButton label={t('viewer.prev')} className="text-white hover:bg-white/10 hover:text-white" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
               <CaretLeft size={20} />
             </IconButton>
@@ -226,8 +279,26 @@ function Viewer({ fileId }: { fileId: string }) {
           </div>
         )}
 
+        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        {isPdf && doc && navOpen && (
+          <div className="max-h-[40vh] min-h-0 shrink-0 border-b border-white/10 lg:max-h-none lg:w-64 lg:border-r lg:border-b-0">
+            <ViewerNav
+              doc={doc}
+              fileId={fileId}
+              total={total}
+              page={page}
+              onPick={goTo}
+              outline={f?.outline ?? []}
+              confidential={confidential}
+              tab={navTab}
+              onTab={setNavTab}
+              query={query}
+              onQuery={setQuery}
+            />
+          </div>
+        )}
         <div className="min-h-0 flex-1 overflow-auto p-4 md:p-8">
-          {(meta.isPending || bytes.isPending) && f?.viewable !== false && <Skeleton className="mx-auto h-[70vh] w-full max-w-2xl rounded-none bg-white/10" />}
+          {(meta.isPending || (bytes.isPending && !streamed) || (streamed && !doc && !docError)) && f?.viewable !== false && <Skeleton className="mx-auto h-[70vh] w-full max-w-2xl rounded-none bg-white/10" />}
           {f && f.status !== 'READY' && <EmptyState icon={<ShieldCheck size={28} />} title={t(`files.status.${f.status}`)} />}
           {f && f.status === 'READY' && !f.viewable && (
             <EmptyState
@@ -255,12 +326,14 @@ function Viewer({ fileId }: { fileId: string }) {
                 setPanel('notes');
               }}
               label={t('viewer.page', { page, total })}
+              marks={marks}
             />
           )}
           {imageUrl && <img src={imageUrl} alt={f?.fileName ?? ''} className="mx-auto max-h-full max-w-full bg-white shadow-2xl" draggable={false} onContextMenu={(e) => e.preventDefault()} />}
           {bytes.data && !isPdf && bytes.data.type.startsWith('text/') && (
             <pre className="mx-auto max-w-3xl rounded-xl bg-white p-6 font-mono text-sm leading-5 whitespace-pre-wrap text-black">{new TextDecoder().decode(bytes.data.bytes)}</pre>
           )}
+        </div>
         </div>
       </div>
 
