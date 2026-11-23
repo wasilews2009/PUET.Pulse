@@ -47,8 +47,9 @@ services:
     networks: [backend]
 
   minio:
-    # MinIO removed its Docker Hub images; the official ones stay on quay.io (multi-arch).
-    image: ${MINIO_IMAGE:-quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z}
+    # MinIO no longer publishes images (Docker Hub repos removed, quay.io needs a login).
+    # pgsty/* are community builds of the same AGPL code, multi-arch (amd64 and arm64).
+    image: ${MINIO_IMAGE:-pgsty/minio:RELEASE.2026-08-04T00-00-00Z}
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -71,7 +72,7 @@ services:
 
   # One-shot job: creates buckets, enforces default SSE encryption, blocks anonymous access.
   minio-init:
-    image: ${MC_IMAGE:-quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z}
+    image: ${MC_IMAGE:-pgsty/mc:RELEASE.2026-11-12T00-00-00Z}
     depends_on:
       minio:
         condition: service_healthy
