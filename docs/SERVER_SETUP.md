@@ -132,10 +132,18 @@ MEET=meet.puet-pulse.duckdns.org
 Підключіться до сервера: `ssh ubuntu@<IP>`. Усі наступні команди виконуються
 на сервері.
 
+> **Вставляйте команди по одній.** Якщо ви підключаєтеся з Windows (PowerShell
+> або Windows Terminal), вставка кількох рядків одразу може склеїти їх, і
+> частина команд мовчки не виконається. Копіюйте один рядок, натискайте Enter,
+> дочекайтеся завершення, потім беріть наступний. Рядки з `#` наприкінці
+> містять лише коментар, його можна не копіювати.
+
 ```bash
 sudo apt update && sudo apt -y full-upgrade
 sudo timedatectl set-timezone Europe/Kyiv
 sudo apt -y install git curl ca-certificates nginx certbot unattended-upgrades fail2ban
+nginx -v && certbot --version                            # обидві команди мають вивести версію
+sudo useradd --system --home /srv/puet-pulse --shell /usr/sbin/nologin puet-pulse   # службовий користувач месенджера
 sudo dpkg-reconfigure -plow unattended-upgrades          # автоматичні оновлення безпеки
 
 # Файл підкачки на 4 ГБ (запас пам'яті під час збирання й оновлення антивірусних баз)
@@ -178,7 +186,7 @@ docker --version && node --version
 ## Крок 6. Завантажте і зберіть месенджер
 
 ```bash
-sudo useradd --system --home /srv/puet-pulse --shell /usr/sbin/nologin puet-pulse
+id puet-pulse                                    # перевірка: користувач з кроку 4 існує
 sudo mkdir -p /srv/puet-pulse && sudo chown ubuntu: /srv/puet-pulse
 git clone https://github.com/wasilews2009/PUET.Pulse.git /srv/puet-pulse/app
 cd /srv/puet-pulse/app

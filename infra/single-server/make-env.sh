@@ -82,6 +82,9 @@ LIVEKIT_API_SECRET=$LK_SECRET
 
 ADMISSIONS_ANSWERS=extractive
 EOF
-# The API service (user puet-pulse) reads it; nobody else.
-if getent group puet-pulse >/dev/null 2>&1; then chgrp puet-pulse "$OUT" && chmod 640 "$OUT"; fi
+# The API service (user puet-pulse) reads it; nobody else. Create the service
+# account here if step 6 was skipped.
+getent passwd puet-pulse >/dev/null 2>&1 ||
+  useradd --system --home /srv/puet-pulse --shell /usr/sbin/nologin puet-pulse
+chgrp puet-pulse "$OUT" && chmod 640 "$OUT"
 echo "Written $OUT (root:puet-pulse, mode 0640). LiveKit API key: $LK_KEY (put it into infra/single-server/livekit.yaml, webhook.api_key)."
