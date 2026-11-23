@@ -60,8 +60,8 @@ OIDC_POST_LOGOUT_REDIRECT_URI=https://$PULSE_HOST/
 SESSION_ABSOLUTE_HOURS=10
 SESSION_IDLE_MINUTES=30
 
-# "pilot": loads people from JSON files (pnpm sync:send) until HR / ЄДЕБО / ERP are connected.
-INTEGRATION_CLIENTS={"pilot":{"id":"00000000-0000-4000-8000-00000000a001","secret":"$(hex 32)","tenantCode":"PUET_MAIN","kinds":["HR_STAFF","EDEBO_STUDENTS","TEACHING_LOAD","OFFBOARDING"]}}
+# "pilot": loads people and bot feeds from JSON files (pnpm sync:send) until HR / ЄДЕБО / ERP / ЕДО are connected.
+INTEGRATION_CLIENTS={"pilot":{"id":"00000000-0000-4000-8000-00000000a001","secret":"$(hex 32)","tenantCode":"PUET_MAIN","kinds":["HR_STAFF","EDEBO_STUDENTS","TEACHING_LOAD","OFFBOARDING","DEANERY","SCHEDULE","EDO"]}}
 
 E2EE_SERVER_NAME=$PULSE_HOST
 JOBS_ENABLED=true

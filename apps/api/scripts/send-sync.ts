@@ -6,6 +6,7 @@
  *   pnpm sync:send edebo/students students.json
  *   pnpm sync:send teaching-load load.json
  *   pnpm sync:send offboarding leavers.json
+ *   pnpm sync:send schedule changes.json      (also deanery, edo: bot feeds)
  *
  * The client (default "pilot", or SYNC_CLIENT) must exist in INTEGRATION_CLIENTS
  * with the matching kind. The API validates the file with the same schemas as
@@ -17,7 +18,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { sign } from '../src/integrations/hmac';
 
-const PATHS = ['hr/staff', 'edebo/students', 'teaching-load', 'offboarding'] as const;
+const PATHS = ['hr/staff', 'edebo/students', 'teaching-load', 'offboarding', 'deanery', 'schedule', 'edo'] as const;
 
 async function main() {
   const [path, file] = process.argv.slice(2);
