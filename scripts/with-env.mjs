@@ -6,9 +6,19 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 
-const file = process.env.PULSE_ENV_FILE ?? '.env';
-if (existsSync(file)) {
-  for (const [k, v] of Object.entries(parseEnv(readFileSync(file, 'utf8')))) {
+// ./.env is optional; an explicit PULSE_ENV_FILE must be readable, otherwise
+// the service would start without its settings and fail far from the cause.
+const explicit = process.env.PULSE_ENV_FILE;
+const file = explicit ?? '.env';
+if (explicit || existsSync(file)) {
+  let text;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (e) {
+    console.error(`with-env: cannot read PULSE_ENV_FILE=${file} (${e.code ?? e.message}). Check that it exists and that this user may read it and its directory.`);
+    process.exit(78); // EX_CONFIG
+  }
+  for (const [k, v] of Object.entries(parseEnv(text))) {
     if (process.env[k] === undefined) process.env[k] = v;
   }
 }

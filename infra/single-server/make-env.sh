@@ -86,5 +86,6 @@ EOF
 # account here if step 6 was skipped.
 getent passwd puet-pulse >/dev/null 2>&1 ||
   useradd --system --home /srv/puet-pulse --shell /usr/sbin/nologin puet-pulse
-chgrp puet-pulse "$OUT" && chmod 640 "$OUT"
-echo "Written $OUT (root:puet-pulse, mode 0640). LiveKit API key: $LK_KEY (put it into infra/single-server/livekit.yaml, webhook.api_key)."
+DIR=$(dirname "$OUT")
+chgrp puet-pulse "$DIR" "$OUT" && chmod 750 "$DIR" && chmod 640 "$OUT"   # umask 077 made the dir 0700
+echo "Written $OUT (root:puet-pulse, mode 0640; $DIR 0750). LiveKit API key: $LK_KEY (put it into infra/single-server/livekit.yaml, webhook.api_key)."
