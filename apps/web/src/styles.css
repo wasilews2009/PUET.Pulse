@@ -1,0 +1,228 @@
+@import 'tailwindcss';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/montserrat/500.css';
+@import '@fontsource/montserrat/600.css';
+@import '@fontsource/montserrat/700.css';
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/*
+ * PUET design tokens (CLAUDE.md §6). Layer 1: brand palette. Layer 2: semantic
+ * roles that components use. Admin white-label settings (tenants.theme_overrides)
+ * may override the brand layer only, with validated hex colors (theme/overrides.ts).
+ */
+:root {
+  --puet-navy-primary: #163c56;
+  --puet-navy-accent: #1c4966;
+  --puet-terracotta-accent: #df4827;
+  --puet-terracotta-deep: #c83d1e;
+  --puet-ice-surface: #eff4f7;
+  --puet-ice-shadow: #d9e2e8;
+  --puet-obsidian-dark: #080808;
+  --puet-obsidian-surface: #121619;
+  --puet-pure-white: #ffffff;
+  --puet-signed-green: #1f7a4d;
+
+  --pulse-bg: var(--puet-ice-surface);
+  --pulse-surface: var(--puet-pure-white);
+  --pulse-surface-2: #f6f9fb;
+  --pulse-surface-hover: #e6edf2;
+  --pulse-border: var(--puet-ice-shadow);
+  --pulse-text: #0f1e29;
+  --pulse-text-muted: #52606b;
+  --pulse-primary: var(--puet-navy-primary);
+  --pulse-primary-hover: var(--puet-navy-accent);
+  --pulse-on-primary: var(--puet-pure-white);
+  --pulse-accent: var(--puet-terracotta-accent);
+  --pulse-accent-hover: var(--puet-terracotta-deep);
+  --pulse-on-accent: var(--puet-pure-white);
+  --pulse-sidebar: var(--puet-navy-primary);
+  --pulse-sidebar-hover: var(--puet-navy-accent);
+  --pulse-sidebar-text: var(--puet-pure-white);
+  --pulse-sidebar-muted: #b9c8d3;
+  --pulse-canvas: var(--puet-ice-surface);
+  --pulse-bubble-in: var(--puet-pure-white);
+  --pulse-bubble-out: var(--puet-navy-primary);
+  --pulse-on-bubble-out: var(--puet-pure-white);
+  --pulse-success: var(--puet-signed-green);
+  --pulse-danger: #b3261e;
+  --pulse-focus: var(--puet-terracotta-accent);
+  --pulse-viewer-backdrop: var(--puet-obsidian-dark);
+  color-scheme: light;
+  /* Code blocks stay dark in both themes (readable syntax colours). */
+  --pulse-code: #121619;
+  --pulse-code-ink: #e6edf3;
+}
+
+[data-theme='dark'] {
+  --pulse-bg: var(--puet-obsidian-dark);
+  --pulse-surface: var(--puet-obsidian-surface);
+  --pulse-surface-2: #181e22;
+  --pulse-surface-hover: #1f272c;
+  --pulse-border: #263038;
+  --pulse-text: var(--puet-pure-white);
+  --pulse-text-muted: #a3aeb7;
+  --pulse-primary: #2a6a92;
+  --pulse-primary-hover: #327aa6;
+  --pulse-sidebar: var(--puet-obsidian-surface);
+  --pulse-sidebar-hover: #1f272c;
+  --pulse-sidebar-muted: #a3aeb7;
+  --pulse-canvas: var(--puet-obsidian-dark);
+  --pulse-bubble-in: #1a2026;
+  --pulse-bubble-out: var(--puet-navy-accent);
+  --pulse-success: #3fae78;
+  --pulse-danger: #f2766b;
+  color-scheme: dark;
+  --pulse-code: #0d1114;
+  --pulse-code-ink: #e6edf3;
+}
+
+@theme inline {
+  --font-heading: 'Montserrat', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  --color-bg: var(--pulse-bg);
+  --color-surface: var(--pulse-surface);
+  --color-surface-2: var(--pulse-surface-2);
+  --color-surface-hover: var(--pulse-surface-hover);
+  --color-line: var(--pulse-border);
+  --color-ink: var(--pulse-text);
+  --color-muted: var(--pulse-text-muted);
+  --color-primary: var(--pulse-primary);
+  --color-primary-hover: var(--pulse-primary-hover);
+  --color-on-primary: var(--pulse-on-primary);
+  --color-accent: var(--pulse-accent);
+  --color-accent-hover: var(--pulse-accent-hover);
+  --color-on-accent: var(--pulse-on-accent);
+  --color-sidebar: var(--pulse-sidebar);
+  --color-sidebar-hover: var(--pulse-sidebar-hover);
+  --color-sidebar-text: var(--pulse-sidebar-text);
+  --color-sidebar-muted: var(--pulse-sidebar-muted);
+  --color-canvas: var(--pulse-canvas);
+  --color-bubble-in: var(--pulse-bubble-in);
+  --color-bubble-out: var(--pulse-bubble-out);
+  --color-on-bubble-out: var(--pulse-on-bubble-out);
+  --color-code: var(--pulse-code);
+  --color-code-ink: var(--pulse-code-ink);
+  --color-success: var(--pulse-success);
+  --color-danger: var(--pulse-danger);
+  --color-viewer: var(--pulse-viewer-backdrop);
+  /* Call room tiles: obsidian surfaces in both themes, like the PDF viewer backdrop. */
+  --color-call-tile: var(--puet-obsidian-surface);
+  --color-navy: var(--puet-navy-primary);
+  --color-terracotta: var(--puet-terracotta-accent);
+
+  --ease-pulse: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Named text styles (design skill B1); headings in Montserrat, everything else Inter. */
+@utility heading-3 { font-family: var(--font-heading); font-size: 2.25rem; line-height: 2.5rem; font-weight: 600; }
+@utility heading-4 { font-family: var(--font-heading); font-size: 1.875rem; line-height: 2.25rem; font-weight: 600; }
+@utility heading-5 { font-family: var(--font-heading); font-size: 1.5rem; line-height: 2rem; font-weight: 600; }
+@utility heading-6 { font-family: var(--font-heading); font-size: 1.25rem; line-height: 1.75rem; font-weight: 600; }
+@utility title-2 { font-size: 1.125rem; line-height: 1.75rem; font-weight: 500; }
+@utility title-3 { font-size: 1rem; line-height: 1.5rem; font-weight: 500; }
+@utility title-4 { font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; }
+@utility title-5 { font-size: 0.75rem; line-height: 1rem; font-weight: 500; }
+@utility body-3 { font-size: 1rem; line-height: 1.5rem; font-weight: 400; }
+@utility body-4 { font-size: 0.875rem; line-height: 1.25rem; font-weight: 600; }
+@utility body-5 { font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; }
+@utility body-6 { font-size: 0.875rem; line-height: 1.25rem; font-weight: 400; }
+@utility button-md { font-size: 1rem; line-height: 1.5rem; font-weight: 600; }
+@utility button-sm { font-size: 0.875rem; line-height: 1.25rem; font-weight: 600; }
+@utility caption-3 { font-size: 0.75rem; line-height: 1rem; font-weight: 600; }
+@utility caption-4 { font-size: 0.75rem; line-height: 1rem; font-weight: 500; }
+@utility caption-5 { font-size: 0.75rem; line-height: 1rem; font-weight: 400; }
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background: var(--pulse-bg);
+    color: var(--pulse-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  :focus-visible {
+    outline: 2px solid var(--pulse-focus);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--puet-terracotta-accent) 25%, transparent);
+  }
+}
+
+/* Confidential documents: no text selection or printing from the viewer (DLP, CLAUDE.md §4). */
+.pulse-no-copy {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+@media print {
+  .pulse-no-print {
+    display: none !important;
+  }
+  body:has(.pulse-no-print)::after {
+    content: 'Друк конфіденційного документа заборонено / Printing confidential documents is not allowed';
+    display: block;
+    padding: 48px;
+    font: 600 18px/28px var(--font-sans);
+  }
+}
+
+@keyframes pulse-shimmer {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.pulse-skeleton {
+  background: var(--pulse-surface-hover);
+  animation: pulse-shimmer 900ms var(--ease-pulse) infinite alternate;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* Syntax colours for code blocks (lowlight / highlight.js class names). */
+.pulse-code .hljs-comment,
+.pulse-code .hljs-quote { color: #8b98a5; }
+.pulse-code .hljs-keyword,
+.pulse-code .hljs-selector-tag,
+.pulse-code .hljs-built_in,
+.pulse-code .hljs-type { color: #ff8a6b; }
+.pulse-code .hljs-string,
+.pulse-code .hljs-regexp,
+.pulse-code .hljs-addition { color: #7ed3a6; }
+.pulse-code .hljs-number,
+.pulse-code .hljs-literal,
+.pulse-code .hljs-symbol { color: #f2c46d; }
+.pulse-code .hljs-title,
+.pulse-code .hljs-function,
+.pulse-code .hljs-section { color: #8fc3ff; }
+.pulse-code .hljs-attr,
+.pulse-code .hljs-attribute,
+.pulse-code .hljs-variable,
+.pulse-code .hljs-params { color: #c9b6ff; }
+.pulse-code .hljs-meta,
+.pulse-code .hljs-deletion { color: #ff9f9f; }

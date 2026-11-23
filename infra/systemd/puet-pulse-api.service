@@ -1,0 +1,33 @@
+# Example systemd unit for the PUET.Pulse API on the application server.
+#   sudo cp infra/systemd/puet-pulse-api.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now puet-pulse-api
+# /etc/puet/pulse.env holds the settings (from .env.example), owner root, group puet-pulse,
+# mode 0640. It is read by scripts/with-env.mjs (Node's parser) rather than EnvironmentFile=,
+# because systemd would strip the quotes inside INTEGRATION_CLIENTS (JSON).
+[Unit]
+Description=PUET.Pulse API
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=puet-pulse
+Group=puet-pulse
+WorkingDirectory=/srv/puet-pulse/app
+Environment=PULSE_ENV_FILE=/etc/puet/pulse.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node scripts/with-env.mjs /usr/bin/node apps/api/dist/main.js
+Restart=on-failure
+RestartSec=5
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/srv/puet-pulse/app /etc/puet
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
