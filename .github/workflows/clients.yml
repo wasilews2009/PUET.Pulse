@@ -45,8 +45,10 @@ concurrency:
 
 env:
   # Passed through env (never interpolated into scripts) so inputs cannot inject commands.
-  PULSE_URL: ${{ inputs.pulse_url || vars.PULSE_URL || 'https://pulse.puet.edu.ua' }}
-  PULSE_SSO_HOSTS: ${{ inputs.sso_hosts || vars.PULSE_SSO_HOSTS || '' }}
+  # Without repository variables the builds target the pilot server; set
+  # vars.PULSE_URL / vars.PULSE_SSO_HOSTS when the university domain is live.
+  PULSE_URL: ${{ inputs.pulse_url || vars.PULSE_URL || 'https://puet-pulse.duckdns.org' }}
+  PULSE_SSO_HOSTS: ${{ inputs.sso_hosts || vars.PULSE_SSO_HOSTS || 'sso.puet-pulse.duckdns.org' }}
   REF_NAME: ${{ github.ref_name }}
   REF_TYPE: ${{ github.ref_type }}
 
