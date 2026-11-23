@@ -5,6 +5,7 @@ import type { Channel, Message } from '../../api/types';
 import { getSocket } from '../../realtime/socket';
 import { useMe } from '../../session/session';
 import { cryptoStarted, getCrypto, startedPersonas } from '../../e2ee/crypto';
+import { showContentFreeNotification } from './notify';
 import { typingStore } from './typing';
 
 /**
@@ -62,10 +63,7 @@ export function useRealtime() {
     const onTyping = (e: { channelId: string; userId: string }) => typingStore.start(e.channelId, e.userId);
     const onNotification = (e: { channelId: string; silent: boolean; priority: boolean }) => {
       if (e.silent || document.visibilityState === 'visible') return;
-      if ('Notification' in window && Notification.permission === 'granted') {
-        // Content-free: the notification names neither the sender nor the text.
-        new Notification('PUET.Pulse', { body: e.priority ? '❗' : '', tag: e.channelId, icon: '/icon-192.png' });
-      }
+      void showContentFreeNotification(e.channelId, e.priority).catch(() => undefined);
     };
     const onE2ee = () => {
       if (cryptoStarted(me.userId)) void getCrypto(me.userId).then((c) => c.sync()).catch(() => undefined);

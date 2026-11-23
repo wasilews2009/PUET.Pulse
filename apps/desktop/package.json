@@ -8,11 +8,20 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "start": "pnpm build && electron ."
+    "start": "pnpm build && electron .",
+    "dist:config": "node scripts/write-config.mjs",
+    "dist:win": "pnpm build && pnpm dist:config && electron-builder --win --publish never",
+    "dist:mac": "pnpm build && pnpm dist:config && electron-builder --mac --publish never",
+    "dist:linux": "pnpm build && pnpm dist:config && electron-builder --linux --publish never"
   },
   "devDependencies": {
-    "electron": "33.4.11",
+    "electron": "45.4.1",
+    "electron-builder": "26.18.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"
-  }
+  },
+  "author": {
+    "name": "Poltava University of Economics and Trade"
+  },
+  "homepage": "https://puet.edu.ua"
 }

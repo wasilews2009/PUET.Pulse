@@ -1,6 +1,7 @@
-import { app, BrowserWindow, Menu, session, shell, type WebContents } from 'electron';
+import { app, BrowserWindow, dialog, Menu, session, shell, type WebContents } from 'electron';
 import path from 'node:path';
-import { navigationVerdict, parseConfig, permissionAllowed, SECURE_WEB_PREFERENCES, type ShellConfig } from './policy';
+import fs from 'node:fs';
+import { BUNDLED_CONFIG_FILE, loadConfig, navigationVerdict, permissionAllowed, SECURE_WEB_PREFERENCES, type ShellConfig } from './policy';
 
 /**
  * PUET.Pulse for Windows, macOS and Linux: a hardened Electron window around
@@ -10,11 +11,21 @@ import { navigationVerdict, parseConfig, permissionAllowed, SECURE_WEB_PREFERENC
  * HttpOnly cookie; E2EE keys stay in the page's IndexedDB as in a browser.
  */
 
+function readBundled(): string | null {
+  try {
+    return fs.readFileSync(path.join(__dirname, BUNDLED_CONFIG_FILE), 'utf8');
+  } catch {
+    return null;
+  }
+}
+
 let cfg: ShellConfig;
 try {
-  cfg = parseConfig(process.env);
+  cfg = loadConfig({ packaged: app.isPackaged, bundled: app.isPackaged ? readBundled() : null, env: process.env });
 } catch (e) {
   console.error((e as Error).message);
+  // An installed app has no console: say why it will not start.
+  if (app.isPackaged) dialog.showErrorBox('PUET.Pulse', (e as Error).message);
   process.exit(1);
 }
 
@@ -22,6 +33,8 @@ try {
 if (!app.requestSingleInstanceLock()) app.quit();
 
 app.enableSandbox();
+// Windows shows notifications only for an app with an AppUserModelID (the installer's appId).
+if (process.platform === 'win32') app.setAppUserModelId('ua.edu.puet.pulse');
 
 function guard(contents: WebContents) {
   contents.on('will-navigate', (event, url) => {

@@ -19,5 +19,43 @@ PULSE_URL=https://pulse.puet.edu.ua PULSE_SSO_HOSTS=sso.puet.edu.ua pnpm --filte
 The Electron binary is not downloaded by `pnpm install` (build scripts are
 not allowed in this workspace); run `pnpm approve-builds` or
 `node node_modules/electron/install.js` once on a developer machine.
-Installers (MSI / DMG / AppImage) and code signing with the university's
-certificate are configured at release time with electron-builder.
+
+## Інсталятори (Windows, а також macOS / Linux)
+
+Збірка: `electron-builder.yml`, CI: `.github/workflows/clients.yml` (job
+«Windows installer»). Результат:
+
+| Файл | Для кого |
+|---|---|
+| `PUET.Pulse-X.Y.Z-x64.exe`, `…-arm64.exe` (NSIS) | Користувачі: майстер українською / англійською, за замовчуванням встановлення для поточного користувача без прав адміністратора, ярлики на робочому столі й у «Пуск» |
+| `PUET.Pulse-X.Y.Z-x64.msi` | ІТ-центр: тихе встановлення на всі комп'ютери через GPO / Intune / SCCM: `msiexec /i PUET.Pulse-X.Y.Z-x64.msi /qn` |
+
+**Адреса сервера вшивається в інсталятор** (`scripts/write-config.mjs` пише
+`dist/pulse.json` всередину `app.asar`, цілісність якого перевіряє Electron).
+Встановлена програма ігнорує змінні середовища і відмовляється від http, тож
+її не можна непомітно перенаправити на інший сервер. Electron fuses вимикають
+`ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS`, `--inspect` і завантаження коду поза
+`app.asar`; cookies шифруються засобами ОС.
+
+Локально (на Windows):
+
+```powershell
+$env:PULSE_URL = "https://pulse.puet.edu.ua"; $env:PULSE_SSO_HOSTS = "sso.puet.edu.ua"
+pnpm install; pnpm --filter @puet/desktop dist:win     # -> apps/desktop/release/
+```
+
+### Підпис коду
+
+Без підпису Windows SmartScreen показує «Невідомий видавець». Підпис
+вмикається в CI без змін у коді:
+
+- сертифікат у файлі `.pfx`: секрети `WIN_CSC_LINK` (base64 файлу) і
+  `WIN_CSC_KEY_PASSWORD`;
+- або Azure Trusted Signing (сертифікат у хмарному HSM): змінні
+  `AZURE_SIGN_ENDPOINT`, `AZURE_SIGN_ACCOUNT`, `AZURE_SIGN_PROFILE`,
+  `AZURE_SIGN_PUBLISHER` і секрети `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`,
+  `AZURE_CLIENT_SECRET`.
+
+Підпис SHA-256 з міткою часу RFC 3161; CI перевіряє його
+(`Get-AuthenticodeSignature`) і пише `SHA256SUMS-windows.txt`. Сертифікат і
+пароль ніколи не потрапляють у репозиторій (`.gitignore` блокує `*.pfx`).

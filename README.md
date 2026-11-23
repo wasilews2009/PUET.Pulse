@@ -56,6 +56,7 @@ On-premise, zero-trust, multi-tenant.
 | «Переслати» файл в інший чат; файли Канцелярії, кадрів, фінансів, юристів не виходять за межі підрозділу | `apps/api/src/files/file-forward.service.ts` |
 | Вкладення (AES-256-GCM на пристрої) й опитування (події Megolm) у наскрізно зашифрованих кімнатах | `packages/e2ee/src/attachments.ts`, `apps/web/src/features/chat/E2eeContent.tsx` |
 | Десктопна обгортка Electron (без Node у сторінці, пісочниця, білий список переходів) | `apps/desktop` |
+| Інсталятори: Windows (NSIS `.exe` і MSI для GPO / Intune), Android (APK / AAB, Trusted Web Activity), збірка в CI | `apps/desktop`, `apps/android`, `.github/workflows/clients.yml` |
 
 ## Документація
 
