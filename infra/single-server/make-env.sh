@@ -12,8 +12,7 @@ OUT="${PULSE_ENV_OUT:-/etc/puet/pulse.env}"
 [ -e "$OUT" ] && { echo "$OUT already exists; refusing to overwrite" >&2; exit 1; }
 hex() { openssl rand -hex "$1"; }
 
-ARCH=$(uname -m)
-case "$ARCH" in aarch64|arm64) CLAMAV_IMAGE=clamav/clamav-debian:1.4 ;; *) CLAMAV_IMAGE=clamav/clamav:1.4.1 ;; esac
+CLAMAV_IMAGE=clamav/clamav:1.4.7-debian   # multi-arch: amd64 and arm64
 
 PG_PASS=$(hex 24); REDIS_PASS=$(hex 24); MINIO_ROOT=$(hex 24); MINIO_API=$(hex 24)
 LK_KEY="pulse$(hex 6)"; LK_SECRET=$(hex 32)

@@ -47,7 +47,8 @@ services:
     networks: [backend]
 
   minio:
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    # MinIO removed its Docker Hub images; the official ones stay on quay.io (multi-arch).
+    image: ${MINIO_IMAGE:-quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z}
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -70,7 +71,7 @@ services:
 
   # One-shot job: creates buckets, enforces default SSE encryption, blocks anonymous access.
   minio-init:
-    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    image: ${MC_IMAGE:-quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z}
     depends_on:
       minio:
         condition: service_healthy
@@ -88,8 +89,8 @@ services:
     networks: [backend]
 
   clamav:
-    # On ARM servers (e.g. Oracle Ampere) set CLAMAV_IMAGE=clamav/clamav-debian:1.4 (multi-arch).
-    image: ${CLAMAV_IMAGE:-clamav/clamav:1.4.1}
+    # Multi-arch (amd64 and arm64, e.g. Oracle Ampere).
+    image: ${CLAMAV_IMAGE:-clamav/clamav:1.4.7-debian}
     restart: unless-stopped
     ports:
       - "127.0.0.1:3310:3310"
