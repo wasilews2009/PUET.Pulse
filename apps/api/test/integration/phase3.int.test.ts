@@ -394,8 +394,8 @@ describe.skipIf(!enabled)('Phase 3 end-to-end (PostgreSQL)', () => {
     expect((await as('S1').put('/me/quiet-hours', { enabled: true, timezone: 'Europe/Kyiv', startMinute: 0, endMinute: 1, weekdays: [], digestEnabled: true })).status).toBe(403);
 
     // At 23:59 Kyiv the window [00:00, 23:59) is over; skip that minute.
-    const kyivMinute = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Kyiv', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date()).replace(':', '')) % 100;
-    if (kyivMinute === 59) return;
+    const kyivTime = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Kyiv', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
+    if (kyivTime === '23:59') return;
 
     bus.sent.length = 0;
     await as('S2').post(`/channels/${courseId}/messages`, { body: 'Питання ввечері', threadRootId: topicId });
@@ -512,6 +512,8 @@ describe.skipIf(!enabled)('Phase 3 end-to-end (PostgreSQL)', () => {
   // ── Offboarding ──────────────────────────────────────────────────
 
   it('offboarding drops the live socket, revokes E2EE devices and removes auto memberships', async () => {
+    // Own message, so the archive check does not depend on earlier tests.
+    expect((await as('S2').post(`/channels/${courseId}/messages`, { body: 'Архівне питання', threadRootId: topicId })).status).toBe(201);
     const s2 = await connect('S2');
     const closed = nextEvent<string>(s2, 'disconnect');
     await webhook('hr', 'offboarding', { records: [{ edeboId: `S2-${sfx}`, reason: 'EXPELLED' }] });

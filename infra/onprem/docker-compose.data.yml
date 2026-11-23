@@ -1,0 +1,23 @@
+# Data server of the two-server setup (docs/ONPREM_SETUP.md, variant B).
+# Publishes PostgreSQL, Redis, MinIO and ClamAV on the server's INTERNAL address
+# only (DATA_BIND_IP), instead of 127.0.0.1. The firewall must allow these ports
+# from the application server alone.
+#   docker compose --env-file /etc/puet/pulse.env -f docker-compose.yml \
+#     -f infra/single-server/docker-compose.server.yml -f infra/onprem/docker-compose.data.yml up -d
+# Needs Docker Compose 2.24+ (the !override tag replaces the port lists).
+services:
+  postgres:
+    ports: !override
+      - "${DATA_BIND_IP:?set DATA_BIND_IP}:5432:5432"
+  redis:
+    ports: !override
+      - "${DATA_BIND_IP}:6379:6379"
+  minio:
+    ports: !override
+      - "${DATA_BIND_IP}:9000:9000"
+  clamav:
+    ports: !override
+      - "${DATA_BIND_IP}:3310:3310"
+  keycloak:
+    ports: !override
+      - "${DATA_BIND_IP}:8081:8080"

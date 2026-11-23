@@ -13,11 +13,16 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "db:generate": "pnpm --filter @puet/database run generate",
-    "db:migrate": "pnpm --filter @puet/database run migrate:dev",
-    "db:deploy": "pnpm --filter @puet/database run migrate:deploy",
-    "db:seed": "pnpm --filter @puet/database run seed",
+    "db:migrate": "node scripts/with-env.mjs pnpm --filter @puet/database run migrate:dev",
+    "db:deploy": "node scripts/with-env.mjs pnpm --filter @puet/database run migrate:deploy",
+    "db:seed": "node scripts/with-env.mjs pnpm --filter @puet/database run seed",
     "infra:up": "docker compose up -d",
-    "infra:down": "docker compose down"
+    "infra:down": "docker compose down",
+    "start:api": "node scripts/with-env.mjs node apps/api/dist/main.js",
+    "demo:data": "node scripts/with-env.mjs pnpm --filter @puet/api run demo:data",
+    "admin:bootstrap": "node scripts/with-env.mjs pnpm --filter @puet/api run admin:bootstrap",
+    "pki:init-ca": "node scripts/with-env.mjs pnpm --filter @puet/api run pki:init-ca",
+    "sync:send": "node scripts/with-env.mjs pnpm --filter @puet/api run sync:send"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

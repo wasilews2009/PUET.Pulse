@@ -47,7 +47,9 @@ services:
     networks: [backend]
 
   minio:
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    # MinIO no longer publishes images (Docker Hub repos removed, quay.io needs a login).
+    # pgsty/* are community builds of the same AGPL code, multi-arch (amd64 and arm64).
+    image: ${MINIO_IMAGE:-pgsty/minio:RELEASE.2026-08-04T00-00-00Z}
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -70,7 +72,7 @@ services:
 
   # One-shot job: creates buckets, enforces default SSE encryption, blocks anonymous access.
   minio-init:
-    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    image: ${MC_IMAGE:-pgsty/mc:RELEASE.2026-11-12T00-00-00Z}
     depends_on:
       minio:
         condition: service_healthy
@@ -79,6 +81,8 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       S3_BUCKET_ATTACHMENTS: ${S3_BUCKET_ATTACHMENTS:-puet-attachments}
       S3_BUCKET_QUARANTINE: ${S3_BUCKET_QUARANTINE:-puet-quarantine}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
     entrypoint: ["/bin/sh", "/init/init-buckets.sh"]
     volumes:
       - ./infra/minio:/init:ro
@@ -86,7 +90,8 @@ services:
     networks: [backend]
 
   clamav:
-    image: clamav/clamav:1.4.1
+    # Multi-arch (amd64 and arm64, e.g. Oracle Ampere).
+    image: ${CLAMAV_IMAGE:-clamav/clamav:1.4.7-debian}
     restart: unless-stopped
     ports:
       - "127.0.0.1:3310:3310"
@@ -98,6 +103,22 @@ services:
       timeout: 10s
       retries: 5
       start_period: 300s
+    networks: [backend]
+
+  # Trial only (docker compose --profile demo up -d): Keycloak in dev mode with the
+  # demo realm (infra/keycloak/puet-realm.json, fictional people). In production the
+  # university's own Keycloak federated with AD / LDAP is used instead (docs/DEPLOYMENT.md).
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4.5
+    profiles: [demo]
+    command: ["start-dev", "--import-realm", "--http-port=8080"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: kcadmin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:-change-me-local-only}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./infra/keycloak:/opt/keycloak/data/import:ro
     networks: [backend]
 
 networks:
