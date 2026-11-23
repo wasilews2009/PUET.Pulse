@@ -67,6 +67,7 @@ On-premise, zero-trust, multi-tenant.
 - [docs/ONPREM_SETUP.md](docs/ONPREM_SETUP.md): розгортання на серверах університету (мережа,
   Active Directory, TLS, моніторинг, резервні копії, окремий сервер даних).
 - [docs/USER_GUIDE.md](docs/USER_GUIDE.md): як користуватися месенджером.
+- [docs/STAFF_JSON.md](docs/STAFF_JSON.md): як скласти список працівників для пілоту.
 
 ## Швидкий старт (пробний стенд)
 

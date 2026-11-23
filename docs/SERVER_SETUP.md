@@ -368,9 +368,9 @@ curl -s https://$PULSE/api/health; echo          # те саме через HTTP
   ] }
 ```
 
-Коди інститутів, кафедр і підрозділів дивіться в
-`packages/database/prisma/seed-data.ts` або в адмін-панелі на вкладці
-«Структура». Усі поля описано в `apps/api/src/integrations/schemas.ts`.
+Опис кожного поля, усі коди й приклади (ректорат, керівник підрозділу) є в
+[STAFF_JSON.md](STAFF_JSON.md). Коди також видно в адмін-панелі на вкладці
+«Структура» і в `packages/database/prisma/seed-data.ts`. Усі поля описано в `apps/api/src/integrations/schemas.ts`.
 
 ```bash
 $E pnpm sync:send hr/staff /home/ubuntu/staff.json
