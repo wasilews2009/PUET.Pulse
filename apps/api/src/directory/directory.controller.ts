@@ -7,6 +7,7 @@ import { Authorize } from '../authz/authorize.decorator';
 import { loadTargetFacts } from '../authz/prisma-resolvers';
 import { parse } from '../common/validation';
 import { PrismaService } from '../prisma/prisma.service';
+import { effectivePresence, PRESENCE_TRACKER, type PresenceTracker } from '../realtime/presence.tracker';
 
 const searchQuery = z.object({ q: z.string().trim().min(2).max(80) }).strict();
 const cardsInput = z.object({ userIds: z.array(z.string().uuid()).min(1).max(100) }).strict();
@@ -32,8 +33,7 @@ type CardRow = {
 };
 
 /** A public card: no phone, e-mail, birth date, dormitory room or corporate id. */
-export function toCard(u: CardRow, now = new Date()) {
-  const expired = u.presenceUntil !== null && u.presenceUntil <= now;
+export function toCard(u: CardRow, online: boolean, now = new Date()) {
   return {
     id: u.id,
     kind: u.kind,
@@ -42,7 +42,7 @@ export function toCard(u: CardRow, now = new Date()) {
     position: u.staffProfile?.position ?? null,
     academicDegree: u.staffProfile?.academicDegree ?? null,
     academicTitle: u.staffProfile?.academicTitle ?? null,
-    presence: expired ? 'ONLINE' : u.presence,
+    presence: effectivePresence(u.presence, u.presenceUntil, online, now),
   };
 }
 
@@ -53,13 +53,23 @@ export function toCard(u: CardRow, now = new Date()) {
  */
 @Controller()
 export class DirectoryController {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(PRESENCE_TRACKER) private readonly presence: PresenceTracker,
+  ) {}
+
+  private async toCards(rows: CardRow[]) {
+    const online = await this.presence.onlineOf(rows.map((u) => u.id));
+    const now = new Date();
+    return rows.map((u) => toCard(u, online.has(u.id), now));
+  }
 
   @Get('users/:userId')
   @Authorize(Action.USER_PROFILE_READ, { type: ResourceType.USER, idField: 'userId' })
   async profile(@Req() req: AuthenticatedRequest) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: req.authz!.resource.id! }, select: cardSelect });
-    return toCard(user);
+    const [card] = await this.toCards([user]);
+    return card;
   }
 
   /** Personal phone: self and HR only (policy engine, USER_PHONE_READ). */
@@ -88,7 +98,7 @@ export class DirectoryController {
       take: 60,
       select: cardSelect,
     });
-    return (await this.visible(principal, rows)).slice(0, 20).map((u) => toCard(u));
+    return this.toCards((await this.visible(principal, rows)).slice(0, 20));
   }
 
   /** Cards for ids the client already holds (channel members, message senders). Hidden ids are dropped. */
@@ -98,7 +108,7 @@ export class DirectoryController {
   async cards(@Req() req: AuthenticatedRequest, @Body() body: unknown) {
     const { userIds } = parse(cardsInput, body);
     const rows = await this.prisma.user.findMany({ where: { id: { in: [...new Set(userIds)] } }, select: cardSelect });
-    return (await this.visible(req.principal!, rows)).map((u) => toCard(u));
+    return this.toCards(await this.visible(req.principal!, rows));
   }
 
   private async visible<T extends { id: string }>(principal: Principal, rows: T[]): Promise<T[]> {

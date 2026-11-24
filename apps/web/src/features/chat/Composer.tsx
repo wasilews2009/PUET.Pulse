@@ -53,7 +53,14 @@ export function Composer({ channel, threadRootId = null, onUploaded }: { channel
       void qc.invalidateQueries({ queryKey: keys.files(channel.id) });
       onUploaded?.();
     },
-    onError: (e) => setError(e instanceof Error && e.message === 'too-large' ? t('files.tooLarge', { mb: MAX_MB }) : e instanceof ApiError && e.status === 413 ? t('files.tooLarge', { mb: MAX_MB }) : t('files.uploadFailed')),
+    onError: (e) =>
+      setError(
+        (e instanceof Error && e.message === 'too-large') || (e instanceof ApiError && e.status === 413)
+          ? t('files.tooLarge', { mb: MAX_MB })
+          : e instanceof ApiError && e.status === 403
+            ? t('files.uploadForbidden')
+            : t('files.uploadFailed'),
+      ),
   });
 
   const submit = () => {

@@ -19,7 +19,11 @@ export function useRealtime() {
 
   useEffect(() => {
     const s = getSocket();
-    const onConnect = () => setConnected(true);
+    const onConnect = () => {
+      setConnected(true);
+      // Events missed while the socket was down (to-device keys, device changes).
+      onE2ee();
+    };
     const onDisconnect = () => setConnected(false);
     const onMessage = (m: Message) => {
       upsertMessage(qc, m);
@@ -68,7 +72,12 @@ export function useRealtime() {
       }
     };
     const onE2ee = () => {
-      if (cryptoStarted(me.userId)) void getCrypto(me.userId).then((c) => c.sync()).catch(() => undefined);
+      if (cryptoStarted(me.userId))
+        void getCrypto(me.userId)
+          .then((c) => c.sync())
+          // Room keys may just have arrived: retry the messages that could not be decrypted.
+          .then(() => qc.invalidateQueries({ queryKey: ['plain'], predicate: (q) => q.state.status === 'error' }))
+          .catch(() => undefined);
       for (const p of startedPersonas()) void p.then((c) => c.sync()).catch(() => undefined);
     };
 

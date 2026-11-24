@@ -88,6 +88,8 @@ import { SessionAuthService } from './session/session-auth.service';
 import { SessionMiddleware } from './session/session.middleware';
 import { RedisSessionStore, SESSION_STORE } from './session/session.store';
 
+import { PRESENCE_TRACKER, RedisPresenceTracker } from './realtime/presence.tracker';
+
 export const REDIS = Symbol('REDIS');
 
 @Module({
@@ -121,6 +123,7 @@ export const REDIS = Symbol('REDIS');
     { provide: SESSION_STORE, inject: [REDIS], useFactory: (redis: Redis) => new RedisSessionStore(redis) },
     { provide: OIDC_PROVIDER, useClass: OpenIdClientProvider },
     { provide: REALTIME_BUS, inject: [REDIS], useFactory: (redis: Redis) => new RedisRealtimeBus(redis) },
+    { provide: PRESENCE_TRACKER, inject: [REDIS], useFactory: (redis: Redis) => new RedisPresenceTracker(redis) },
     { provide: DIGEST_STORE, inject: [REDIS], useFactory: (redis: Redis) => new RedisDigestStore(redis) },
     {
       provide: OBJECT_STORE,

@@ -41,7 +41,9 @@ export class HttpTransport implements E2eeTransport {
   constructor(
     private readonly baseUrl: string,
     private readonly deviceId: string,
-    private readonly fetchImpl: FetchLike = globalThis.fetch as unknown as FetchLike,
+    // Browsers throw "Illegal invocation" when fetch is called as a method of another
+    // object (this.fetchImpl(...)), so the default calls it unbound.
+    private readonly fetchImpl: FetchLike = (input, init) => (globalThis.fetch as unknown as FetchLike)(input, init),
     private readonly headers: () => Record<string, string> = () => ({}),
   ) {}
 

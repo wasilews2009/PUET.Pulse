@@ -506,6 +506,7 @@ export const en: Dictionary = {
     downloadDenied: 'Confidential documents are view only.',
     uploading: 'Uploading file',
     tooLarge: 'The file is too large. The limit is {{mb}} MB.',
+    uploadForbidden: 'Your role is not allowed to send files to this chat. Contact the administrator.',
     uploadFailed: 'The file could not be uploaded. Allowed types: PDF, images, text and Office documents without macros.',
     pages_one: '{{count}} page',
     pages_few: '{{count}} pages',
