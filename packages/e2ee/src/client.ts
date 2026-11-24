@@ -71,6 +71,12 @@ export class PulseCrypto {
     );
     const client = new PulseCrypto(machine, o.transport, o.serverName);
     await client.flush();
+    // While this device was closed, peers may have added devices and sent it room
+    // keys. The server reports device-list changes only relative to `since`, which
+    // a fresh page does not have, so re-query every tracked user and pull the
+    // queued to-device messages before the first encrypt or decrypt.
+    await machine.markAllTrackedUsersAsDirty();
+    await client.sync();
     return client;
   }
 
