@@ -27,7 +27,18 @@ export default defineConfig({
       '/api': { target: API, changeOrigin: false, rewrite: (p) => p.replace(/^\/api/, '') },
     },
   },
-  build: { target: 'es2022', sourcemap: false, chunkSizeWarningLimit: 1500 },
+  build: {
+    target: 'es2022',
+    sourcemap: false,
+    chunkSizeWarningLimit: 1500,
+    rollupOptions: {
+      output: {
+        // nginx's stock mime.types has no .mjs, so the PDF.js worker was served as
+        // application/octet-stream and refused under `nosniff`. Emit it as .js.
+        assetFileNames: (a) => (a.names?.[0] ?? a.name ?? '').endsWith('.mjs') ? 'assets/[name]-[hash].js' : 'assets/[name]-[hash][extname]',
+      },
+    },
+  },
   test: {
     environment: 'jsdom',
     globals: true,
