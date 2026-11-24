@@ -5,6 +5,7 @@ import { Authorize } from '../authz/authorize.decorator';
 import { parse } from '../common/validation';
 import { isValidTimeZone } from '../notifications/quiet-hours';
 import { PrismaService } from '../prisma/prisma.service';
+import { effectivePresence, PRESENCE_TRACKER, type PresenceTracker } from '../realtime/presence.tracker';
 import { REALTIME_BUS, type RealtimeBus } from '../realtime/realtime.bus';
 import { presenceInput, quietHoursInput } from './messaging.schemas';
 
@@ -23,6 +24,7 @@ export class ProfileController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(REALTIME_BUS) private readonly bus: RealtimeBus,
+    @Inject(PRESENCE_TRACKER) private readonly presence: PresenceTracker,
   ) {}
 
   @Put('me/presence')
@@ -49,8 +51,10 @@ export class ProfileController {
       where: { id: req.authz!.resource.id! },
       select: { presence: true, presenceUntil: true },
     });
-    const expired = user.presenceUntil !== null && user.presenceUntil <= new Date();
-    return { status: expired ? 'ONLINE' : user.presence, until: expired ? null : (user.presenceUntil?.toISOString() ?? null) };
+    const id = req.authz!.resource.id!;
+    const status = effectivePresence(user.presence, user.presenceUntil, (await this.presence.onlineOf([id])).has(id));
+    const manual = status === user.presence && status !== 'ONLINE' && status !== 'OFFLINE';
+    return { status, until: manual ? (user.presenceUntil?.toISOString() ?? null) : null };
   }
 
   @Get('me/quiet-hours')

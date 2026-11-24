@@ -125,7 +125,8 @@ export const useCard = (userId: string | null | undefined) =>
     queryKey: keys.card(userId ?? 'none'),
     queryFn: () => fetchCard(userId!),
     enabled: !!userId,
-    staleTime: 5 * 60_000,
+    // Cards carry presence («В мережі» follows the open messenger), so they refresh every minute.
+    staleTime: 60_000,
   });
 
 /** Insert or replace a message in the cached timeline (newest first). */

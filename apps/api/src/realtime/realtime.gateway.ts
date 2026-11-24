@@ -3,6 +3,7 @@ import { Inject, Logger, OnModuleDestroy, UseGuards } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
+  OnGatewayDisconnect,
   OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
@@ -18,6 +19,7 @@ import { APP_CONFIG, type AppConfig } from '../config/config';
 import { sendMessageInput } from '../messaging/messaging.schemas';
 import { MessagingService } from '../messaging/messaging.service';
 import { SessionAuthService } from '../session/session-auth.service';
+import { PRESENCE_TRACKER, type PresenceTracker } from './presence.tracker';
 import { REALTIME_BUS, type BusEnvelope, type RealtimeBus } from './realtime.bus';
 
 const CHANNEL = { type: ResourceType.CHANNEL, idField: 'channelId' } as const;
@@ -42,7 +44,7 @@ const userRoom = (userId: string) => `u:${userId}`;
  */
 @WebSocketGateway({ path: '/ws', serveClient: false, transports: ['websocket'] })
 @UseGuards(AuthenticationGuard, PolicyGuard)
-export class RealtimeGateway implements OnGatewayInit<Server>, OnModuleDestroy {
+export class RealtimeGateway implements OnGatewayInit<Server>, OnGatewayDisconnect<PulseSocket>, OnModuleDestroy {
   private readonly logger = new Logger(RealtimeGateway.name);
   private server?: Server;
   private timer?: NodeJS.Timeout;
@@ -53,6 +55,7 @@ export class RealtimeGateway implements OnGatewayInit<Server>, OnModuleDestroy {
     @Inject(REALTIME_BUS) private readonly bus: RealtimeBus,
     @Inject(MessagingService) private readonly messaging: MessagingService,
     @Inject(TrustIntakeService) private readonly trust: TrustIntakeService,
+    @Inject(PRESENCE_TRACKER) private readonly presence: PresenceTracker,
   ) {}
 
   afterInit(server: Server) {
@@ -69,6 +72,8 @@ export class RealtimeGateway implements OnGatewayInit<Server>, OnModuleDestroy {
         // Events of the person's anonymous appeals reach the same socket; the pseudonym ids never leave the server here.
         const pseudonyms = await this.trust.pseudonymsOf(resolved.principal.userId);
         if (pseudonyms.length) await socket.join(pseudonyms.map(userRoom));
+        // An open socket is what colleagues see as «В мережі».
+        await this.presence.connected(resolved.principal.userId, socket.id);
         next();
       } catch (err) {
         this.logger.error('WebSocket handshake failed', err as Error);
@@ -79,6 +84,11 @@ export class RealtimeGateway implements OnGatewayInit<Server>, OnModuleDestroy {
     this.bus.subscribe((e) => this.apply(e));
     this.timer = setInterval(() => void this.revalidate(), REVALIDATE_MS);
     this.timer.unref();
+  }
+
+  handleDisconnect(socket: PulseSocket) {
+    const userId = socket.data.principal?.userId;
+    if (userId) void this.presence.disconnected(userId, socket.id);
   }
 
   onModuleDestroy() {
@@ -119,14 +129,19 @@ export class RealtimeGateway implements OnGatewayInit<Server>, OnModuleDestroy {
   private async revalidate() {
     const server = this.server;
     if (!server) return;
+    const live: { userId: string; socketId: string }[] = [];
     for (const socket of server.of('/').sockets.values() as IterableIterator<PulseSocket>) {
       try {
         const resolved = await this.sessions.resolve(socket.data.sessionToken);
         if (!resolved) socket.disconnect(true);
-        else socket.data.principal = resolved.principal;
+        else {
+          socket.data.principal = resolved.principal;
+          live.push({ userId: resolved.principal.userId, socketId: socket.id });
+        }
       } catch (err) {
         this.logger.warn(`Session re-validation failed: ${(err as Error).message}`);
       }
     }
+    await this.presence.renew(live);
   }
 }
