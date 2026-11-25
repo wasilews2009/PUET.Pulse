@@ -549,6 +549,7 @@ model User {
   padesDrafts      PadesDraft[]
   pseudonymCase    AnonymousCase?           @relation("CasePseudonym")
   devices          Device[]
+  pushSubscriptions PushSubscription[]
   crossSigningKeys CrossSigningKey[]
   keyBackups       KeyBackupVersion[]
   secrets          UserSecret[]
@@ -667,6 +668,32 @@ model Device {
   @@index([userId])
   @@index([keysUpdatedAt])
   @@map("devices")
+}
+
+/// Web Push subscription of one browser / installed app (VAPID, RFC 8030 / 8291).
+/// Bound to the session that created it: logout deletes it, offboarding bumps the
+/// epoch, and it lapses at expires_at unless the app is opened again. The push
+/// payload is encrypted for the device by the `web-push` library and names only
+/// the sender and the chat, never the message text.
+model PushSubscription {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  /// Push service URL; only allowlisted push hosts are accepted (no SSRF).
+  endpoint     String   @unique
+  p256dh       String
+  auth         String
+  /// SHA-256 of the session token that registered it (the same id Redis stores).
+  sessionId    String   @map("session_id")
+  sessionEpoch Int      @map("session_epoch")
+  createdAt    DateTime @default(now()) @map("created_at")
+  expiresAt    DateTime @map("expires_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sessionId])
+  @@index([expiresAt])
+  @@map("push_subscriptions")
 }
 
 /// One-time and fallback public keys (Olm). Each one-time key is handed out once.

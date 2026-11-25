@@ -1,15 +1,16 @@
-import { CalendarCheck, ChatsCircle, GearSix, Moon, ShieldStar, SignOut, SquaresFour, Sun, Stamp } from '@phosphor-icons/react';
+import { Bell, CalendarCheck, ChatsCircle, GearSix, Moon, ShieldStar, SignOut, SquaresFour, Sun, Stamp, X } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NavLink, Outlet } from 'react-router';
 import { useApprovals, useBots, useChannels } from '../../api/queries';
-import { cx, IconButton } from '../../components/ui';
+import { Button, cx, IconButton } from '../../components/ui';
 import { pick } from '../../i18n';
 import { isAdmin, logout, useMe } from '../../session/session';
 import { useTheme } from '../../theme/theme';
 import { CallProvider } from '../calls/CallContext';
 import { PresenceMenu } from './PresenceMenu';
+import { usePhoneNotifications } from './usePhoneNotifications';
 import { useRealtime } from './useRealtime';
 
 function RailLink({ to, label, icon, badge }: { to: string; label: string; icon: ReactNode; badge?: number }) {
@@ -61,6 +62,7 @@ export function AppShell() {
   const approvals = useApprovals();
   const { connected } = useRealtime();
   const unread = (channels.data ?? []).filter((c) => !c.mutedUntil).reduce((n, c) => n + c.unread, 0);
+  const phone = usePhoneNotifications(channels.data, unread);
   const pendingApprovals = approvals.data?.length ?? 0;
   const bots = useBots();
   const botUnread = (bots.data ?? []).reduce((n, b) => n + b.unread, 0);
@@ -97,6 +99,18 @@ export function AppShell() {
           <p role="status" className="bg-accent px-4 py-1 text-center caption-4 text-on-accent">
             {t('app.offline')}
           </p>
+        )}
+        {phone.prompt && (
+          <div role="region" aria-label={t('push.title')} className="flex items-center gap-3 border-b border-line bg-surface px-4 py-2">
+            <Bell size={20} className="shrink-0 text-primary" aria-hidden="true" />
+            <p className="min-w-0 flex-1 body-6">{t('push.prompt')}</p>
+            <Button size="sm" className="shrink-0" onClick={() => void phone.enable()}>
+              {t('push.enable')}
+            </Button>
+            <IconButton label={t('push.later')} onClick={phone.dismiss}>
+              <X size={18} />
+            </IconButton>
+          </div>
         )}
         <Outlet />
       </div>

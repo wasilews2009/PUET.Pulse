@@ -12,6 +12,7 @@ import { OutboxService } from '../bots/outbox.service';
 import { PollsService } from '../polls/polls.service';
 import { NotificationService } from '../notifications/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PushService } from '../push/push.service';
 import { ProvisioningService } from './provisioning.service';
 
 interface Job {
@@ -52,6 +53,7 @@ export class JobsService implements OnApplicationBootstrap, OnModuleDestroy {
     @Inject(BotInboxService) private readonly botInbox: BotInboxService,
     @Inject(PadesService) private readonly pades: PadesService,
     @Inject(EncryptedBlobsService) private readonly blobs: EncryptedBlobsService,
+    @Inject(PushService) private readonly push: PushService,
   ) {}
 
   readonly jobs: Job[] = [
@@ -66,6 +68,7 @@ export class JobsService implements OnApplicationBootstrap, OnModuleDestroy {
     { name: 'bot-purge', everyMs: 3_600_000, run: () => this.botInbox.purgeExpired() },
     { name: 'pades-drafts', everyMs: 600_000, run: () => this.pades.purgeExpiredDrafts() },
     { name: 'e2ee-blobs', everyMs: 600_000, run: () => this.blobs.purgeExpired() },
+    { name: 'push-purge', everyMs: 3_600_000, run: () => this.push.purgeExpired() },
   ];
 
   onApplicationBootstrap() {

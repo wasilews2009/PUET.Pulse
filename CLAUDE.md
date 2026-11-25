@@ -405,6 +405,21 @@ the same rules. Evaluation order, first deny wins, default deny:
   empty preload, navigation allowlist, permissions only for calls and
   notifications of the configured origin.
 
+**Phone notifications and the icon badge (Web Push)**
+
+- `src/push`: VAPID Web Push through the audited `web-push` library (payload
+  encrypted for the device, RFC 8291). Keys come from `VAPID_*` env
+  (`pnpm --filter @puet/api push:keys`); unset keys disable push.
+- A subscription (`push_subscriptions`) belongs to the signed-in person and the
+  session that made it: logout deletes it, offboarding deletes all and the
+  session epoch must match, it lapses after `PUSH_SUBSCRIPTION_DAYS` unless the
+  app is opened again. Pseudonyms never subscribe. Endpoints must be https on
+  `PUSH_ENDPOINT_HOSTS` (SSRF; https is also a DB constraint).
+- Pushes follow the Quiet Hours / DND / mute decision of `NotificationService`
+  and carry ids, the sender's and the chat's name and the unread count, never
+  the message text. One notification per message (launchers count them);
+  `navigator.setAppBadge` where the platform has it.
+
 ## 5. Organizational topology and data model
 
 - **Tenants:** `PUET_MAIN`, `PUET_LYCEUM` (strict minor protection),

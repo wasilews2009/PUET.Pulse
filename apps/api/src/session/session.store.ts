@@ -37,6 +37,8 @@ export interface SessionStore {
 export const newToken = (): string => randomBytes(32).toString('base64url');
 const digest = (token: string): string => createHash('sha256').update(token).digest('hex');
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
+/** Stable id of a session (the SHA-256 the store keys it by), for data bound to one login. */
+export const sessionIdOf = (token: string): string => digest(token);
 
 /** Redis-backed store: a Redis dump never contains a usable session token. */
 export class RedisSessionStore implements SessionStore {

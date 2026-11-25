@@ -1,3 +1,4 @@
+import { PushService } from '../push/push.service';
 import { TrustIntakeService } from '../trust/trust-intake.service';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Prisma, RoleCode as DbRoleCode } from '@puet/database';
@@ -38,6 +39,7 @@ export class SyncService {
     @Inject(SESSION_STORE) private readonly sessions: SessionStore,
     @Inject(REALTIME_BUS) private readonly bus: RealtimeBus,
     @Inject(TrustIntakeService) private readonly trust: TrustIntakeService,
+    @Inject(PushService) private readonly push: PushService,
   ) {}
 
   async syncStudents(tenantId: string, records: StudentRecord[], actorId: string): Promise<SyncResult> {
@@ -198,6 +200,7 @@ export class SyncService {
     const pseudonyms = await this.trust.pseudonymsOf(userId);
     await this.trust.offboard(userId);
     await this.sessions.destroyAllForUser(userId);
+    await this.push.removeForUser(userId);
     await this.bus.disconnectUsers([userId, ...pseudonyms]);
     await this.audit.record({
       actorId,
