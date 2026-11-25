@@ -447,7 +447,7 @@ $C --profile calls up -d livekit
 
 ```bash
 cd /srv/puet-pulse/app
-pnpm --filter @puet/api push:keys | sudo tee -a /etc/puet/pulse.env
+pnpm --silent --filter @puet/api push:keys | sudo tee -a /etc/puet/pulse.env
 sudo systemctl restart puet-pulse-api
 ```
 

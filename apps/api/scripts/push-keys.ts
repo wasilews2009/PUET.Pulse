@@ -3,7 +3,7 @@
  * and append the output to the env file; changing the keys later makes every
  * phone subscribe again on its next start.
  *
- *   pnpm --filter @puet/api push:keys | sudo tee -a /etc/puet/pulse.env
+ *   pnpm --silent --filter @puet/api push:keys | sudo tee -a /etc/puet/pulse.env
  */
 import webpush from 'web-push';
 
