@@ -3,7 +3,8 @@ import { AccountStatus } from '@puet/shared';
 import { AuditService } from '../audit/audit.service';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { PrismaService } from '../prisma/prisma.service';
-import { SESSION_STORE, type SessionStore } from '../session/session.store';
+import { PushService } from '../push/push.service';
+import { SESSION_STORE, sessionIdOf, type SessionStore } from '../session/session.store';
 import { idTokenProvesMfa, requiresMfa, safeReturnTo } from './mfa';
 import { OIDC_PROVIDER, oidcGenerators, type IdTokenClaims, type OidcProvider } from './oidc.service';
 import { PrincipalFactory } from './principal.factory';
@@ -28,6 +29,7 @@ export class AuthService {
     @Inject(PrincipalFactory) private readonly principals: PrincipalFactory,
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(PushService) private readonly push: PushService,
   ) {}
 
   async beginLogin(returnTo: unknown, stepUp = false): Promise<string> {
@@ -103,7 +105,11 @@ export class AuthService {
   }
 
   async logout(token: string | undefined, actor?: { userId: string; tenantId: string }, ip?: string) {
-    if (token) await this.sessions.destroy(token);
+    if (token) {
+      await this.sessions.destroy(token);
+      // Signed out on this phone: it stops receiving notifications at once.
+      await this.push.removeForSession(sessionIdOf(token));
+    }
     if (actor) {
       await this.audit.record({
         actorId: actor.userId,

@@ -11,6 +11,7 @@ import { currentDeviceId, getCrypto } from '../../e2ee/crypto';
 import { useMe } from '../../session/session';
 import { useTheme, type ThemeChoice } from '../../theme/theme';
 import { LanguageSwitch } from '../shell/LanguageSwitch';
+import { disablePush, enablePush, pushState, type PushState } from '../shell/push';
 import { deleteKey, saveKey } from '../signatures/keystore';
 import { useLocalCertificate } from '../signatures/SignDialog';
 
@@ -221,11 +222,44 @@ function E2eeCard() {
   );
 }
 
+function PushCard() {
+  const { t } = useTranslation();
+  const [state, setState] = useState<PushState | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void pushState().then(setState).catch(() => setState('off'));
+  }, []);
+  const run = (f: () => Promise<PushState>) => {
+    setBusy(true);
+    void f()
+      .then(setState)
+      .catch(() => setState('unavailable'))
+      .finally(() => setBusy(false));
+  };
+  const message = state === 'on' ? t('push.on') : state === 'off' ? t('push.off') : state ? t(`push.${state}`) : '';
+  return (
+    <Card id="push" icon={<Bell size={22} />} title={t('push.title')} hint={t('push.hint')}>
+      <div className="flex flex-wrap items-center gap-3">
+        {state === 'on' ? <Badge tone="success">{message}</Badge> : <p className="body-6 text-muted">{message}</p>}
+        {state === 'off' && (
+          <Button size="sm" icon={<Bell size={16} />} loading={busy} onClick={() => run(() => enablePush(true))}>
+            {t('push.enable')}
+          </Button>
+        )}
+        {state === 'on' && (
+          <Button variant="secondary" size="sm" loading={busy} onClick={() => run(() => disablePush().then(() => 'off' as const))}>
+            {t('push.disable')}
+          </Button>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 export default function SettingsPage() {
   const { t, i18n } = useTranslation();
   const me = useMe();
   const { choice, setChoice } = useTheme();
-  const [perm, setPerm] = useState(() => ('Notification' in window ? Notification.permission : 'denied'));
   return (
     <main id="main" className="min-h-0 flex-1 overflow-y-auto bg-canvas">
       <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-6">
@@ -274,14 +308,10 @@ export default function SettingsPage() {
               {t('settings.language')}
               <LanguageSwitch />
             </div>
-            {perm === 'default' && (
-              <Button variant="secondary" size="sm" icon={<Bell size={16} />} onClick={() => void Notification.requestPermission().then(setPerm)}>
-                {t('settings.notifications')}
-              </Button>
-            )}
           </div>
         </Card>
 
+        <PushCard />
         <QuietHoursCard />
         <CertificatesCard />
         <E2eeCard />

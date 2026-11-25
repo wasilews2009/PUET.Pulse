@@ -5,6 +5,7 @@ import type { Channel, Message } from '../../api/types';
 import { getSocket } from '../../realtime/socket';
 import { useMe } from '../../session/session';
 import { cryptoStarted, getCrypto, startedPersonas } from '../../e2ee/crypto';
+import { isPushActive } from './push';
 import { typingStore } from './typing';
 
 /**
@@ -65,7 +66,8 @@ export function useRealtime() {
     };
     const onTyping = (e: { channelId: string; userId: string }) => typingStore.start(e.channelId, e.userId);
     const onNotification = (e: { channelId: string; silent: boolean; priority: boolean }) => {
-      if (e.silent || document.visibilityState === 'visible') return;
+      // With Web Push on, the service worker shows the notification (with the sender's name).
+      if (e.silent || document.visibilityState === 'visible' || isPushActive()) return;
       if ('Notification' in window && Notification.permission === 'granted') {
         // Content-free: the notification names neither the sender nor the text.
         new Notification('PUET.Pulse', { body: e.priority ? '❗' : '', tag: e.channelId, icon: '/icon-192.png' });

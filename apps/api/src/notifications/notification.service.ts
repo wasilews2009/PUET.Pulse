@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { PushService } from '../push/push.service';
 import { REALTIME_BUS, type RealtimeBus } from '../realtime/realtime.bus';
 import { DIGEST_STORE, type DigestStore } from './digest.store';
 import { decideNotification } from './quiet-hours';
@@ -13,8 +14,9 @@ export interface NotifiableMessage {
 
 /**
  * Sends `notification` events (the client turns them into sound / push) and
- * holds the rest for the morning digest. Payloads carry ids only: never the
- * message body, so E2EE and DLP rules are not weakened by notifications.
+ * holds the rest for the morning digest. Socket payloads carry ids only; the
+ * Web Push to phones adds the sender's and the chat's name (encrypted for the
+ * device), never the message body, so E2EE and DLP rules are not weakened.
  */
 @Injectable()
 export class NotificationService {
@@ -24,7 +26,11 @@ export class NotificationService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(REALTIME_BUS) private readonly bus: RealtimeBus,
     @Inject(DIGEST_STORE) private readonly digests: DigestStore,
+    @Inject(PushService) private readonly push: PushService,
   ) {}
+
+  /** Phone pushes of the last dispatch (tests await it; the request never waits for push services). */
+  lastPush: Promise<number> = Promise.resolve(0);
 
   async dispatch(message: NotifiableMessage, recipientIds: readonly string[], now = new Date()): Promise<void> {
     const ids = recipientIds.filter((id) => id !== message.senderId);
@@ -62,6 +68,8 @@ export class NotificationService {
     const base = { channelId: message.channelId, messageId: message.id, priority: message.isPriority };
     if (loud.length) await this.bus.emitToUsers(loud, 'notification', { ...base, silent: false });
     if (silent.length) await this.bus.emitToUsers(silent, 'notification', { ...base, silent: true });
+    // Phones in the background or with the app closed: Web Push naming the sender, never the text.
+    this.lastPush = this.push.deliver(message, loud, silent, now);
   }
 
   /** Releases digests whose quiet window has ended. Returns how many users were notified. */

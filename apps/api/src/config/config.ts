@@ -103,6 +103,18 @@ const schema = z.object({
   ADMISSIONS_MODEL: z.string().regex(/^[a-z0-9.-]{3,64}$/).default('claude-opus-5-5'),
   /** Questions per person per hour. */
   ADMISSIONS_RATE_PER_HOUR: z.coerce.number().int().min(1).max(500).default(20),
+  // ── Phone notifications (Web Push, VAPID). Unset keys: no push, only in-app notifications. ──
+  /** P-256 key pair, base64url (`pnpm --filter @puet/api push:keys`). The private key is never logged. */
+  VAPID_PUBLIC_KEY: optional(z.string().regex(/^[A-Za-z0-9_-]{80,100}$/)),
+  VAPID_PRIVATE_KEY: optional(z.string().regex(/^[A-Za-z0-9_-]{40,50}$/)),
+  /** Contact the push services may use: https URL or mailto:. Defaults to WEB_ORIGIN. */
+  VAPID_SUBJECT: optional(z.string().regex(/^(https:\/\/|mailto:)\S+$/)),
+  /** A phone keeps receiving notifications this long after the app was last opened (logout ends it at once). */
+  PUSH_SUBSCRIPTION_DAYS: z.coerce.number().int().min(1).max(90).default(14),
+  /** Push services the server may POST to (exact host or *.suffix). Anything else is refused (no SSRF). */
+  PUSH_ENDPOINT_HOSTS: z
+    .string()
+    .default('fcm.googleapis.com,android.googleapis.com,updates.push.services.mozilla.com,web.push.apple.com,*.notify.windows.com'),
 });
 
 export interface AppConfig {
@@ -142,6 +154,8 @@ export interface AppConfig {
   trustIntakeSecret?: string;
   /** Extra hosts links to minors may point to (content filter, Phase 9). */
   minorLinkHosts: string[];
+  /** Web Push to phones and desktops; null when the VAPID keys are not configured. */
+  push: { publicKey: string; privateKey: string; subject: string; subscriptionDays: number; endpointHosts: string[] } | null;
   bots: {
     outbox: Partial<Record<'DEANERY' | 'EDO', { url: string; secret: string }>>;
     scheduleLinkHosts: string[];
@@ -168,6 +182,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     if (url && e.NODE_ENV === 'production' && !url.startsWith('https://')) {
       throw new Error('Invalid configuration: OUTBOX_*_URL must use https');
     }
+  }
+  if (!!e.VAPID_PUBLIC_KEY !== !!e.VAPID_PRIVATE_KEY) {
+    throw new Error('Invalid configuration: set both VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY, or neither');
   }
   if (e.ADMISSIONS_ANSWERS === 'anthropic' && !e.ANTHROPIC_API_KEY) {
     throw new Error('Invalid configuration: ADMISSIONS_ANSWERS=anthropic needs ANTHROPIC_API_KEY');
@@ -218,6 +235,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     },
     ...(e.TRUST_INTAKE_SECRET ? { trustIntakeSecret: e.TRUST_INTAKE_SECRET } : {}),
     minorLinkHosts: e.MINOR_LINK_HOSTS.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean),
+    push:
+      e.VAPID_PUBLIC_KEY && e.VAPID_PRIVATE_KEY
+        ? {
+            publicKey: e.VAPID_PUBLIC_KEY,
+            privateKey: e.VAPID_PRIVATE_KEY,
+            subject: e.VAPID_SUBJECT ?? new URL(e.WEB_ORIGIN).origin,
+            subscriptionDays: e.PUSH_SUBSCRIPTION_DAYS,
+            endpointHosts: e.PUSH_ENDPOINT_HOSTS.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean),
+          }
+        : null,
     livekit:
       e.LIVEKIT_URL && e.LIVEKIT_API_KEY && e.LIVEKIT_API_SECRET
         ? {

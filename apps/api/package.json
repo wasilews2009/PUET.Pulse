@@ -13,7 +13,8 @@
     "pki:init-ca": "tsx scripts/init-ca.ts",
     "demo:data": "tsx scripts/demo-data.ts",
     "admin:bootstrap": "tsx scripts/grant-super-admin.ts",
-    "sync:send": "tsx scripts/send-sync.ts"
+    "sync:send": "tsx scripts/send-sync.ts",
+    "push:keys": "tsx scripts/push-keys.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.12.0",
@@ -40,6 +41,7 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "socket.io": "4.8.3",
+    "web-push": "3.6.7",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -48,6 +50,7 @@
     "@puet/signing": "workspace:*",
     "@types/express": "^5.0.3",
     "@types/qrcode": "1.5.6",
+    "@types/web-push": "3.6.4",
     "socket.io-client": "4.8.3",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",

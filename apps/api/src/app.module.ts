@@ -82,6 +82,9 @@ import { ProvisioningService } from './provisioning/provisioning.service';
 import { REALTIME_BUS, RedisRealtimeBus } from './realtime/realtime.bus';
 import { RealtimeGateway } from './realtime/realtime.gateway';
 import { PrismaService } from './prisma/prisma.service';
+import { PushController } from './push/push.controller';
+import { DisabledPushSender, PUSH_SENDER, WebPushSender } from './push/push.sender';
+import { PushService } from './push/push.service';
 import { TrustController } from './trust/trust.controller';
 import { TrustIntakeService } from './trust/trust-intake.service';
 import { SessionAuthService } from './session/session-auth.service';
@@ -112,6 +115,7 @@ export const REDIS = Symbol('REDIS');
     AdminController,
     TrustController,
     EncryptedBlobsController,
+    PushController,
   ],
   providers: [
     { provide: APP_CONFIG, useFactory: () => loadConfig() },
@@ -173,6 +177,12 @@ export const REDIS = Symbol('REDIS');
     VerificationService,
     MessagingService,
     NotificationService,
+    PushService,
+    {
+      provide: PUSH_SENDER,
+      inject: [APP_CONFIG],
+      useFactory: (cfg: AppConfig) => (cfg.push ? new WebPushSender(cfg.push) : new DisabledPushSender()),
+    },
     ProvisioningService,
     JobsService,
     E2eeService,
