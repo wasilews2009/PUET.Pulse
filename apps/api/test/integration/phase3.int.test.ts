@@ -190,6 +190,9 @@ describe.skipIf(!enabled)('Phase 3 end-to-end (PostgreSQL)', () => {
       records: [
         { hrId: `L-${sfx}`, corporateId: `L-${sfx}`, email: `l-${sfx}@puet.test`, fullNameUk: 'Викладач', position: 'Доцент', primaryDepartmentCode: 'COMPUTER_SCIENCE_IT', roles: [{ role: 'LECTURER' }] },
         { hrId: `CP-${sfx}`, corporateId: `CP-${sfx}`, email: `cp-${sfx}@puet.test`, fullNameUk: 'Цивільний захист', position: 'Інженер ЦЗ', orgUnitCodes: ['CIVIL_PROTECTION'], roles: [{ role: 'CIVIL_PROTECTION_OFFICER' }] },
+        { hrId: `SH-${sfx}`, corporateId: `SH-${sfx}`, email: `sh-${sfx}@puet.test`, fullNameUk: 'Керівник STEAM', position: 'Керівник ННЦ «STEAM-ХАБ»', orgUnitCodes: ['STEAM_HUB'], roles: [{ role: 'LECTURER', orgUnitCode: 'STEAM_HUB' }] },
+        // Even a unit-scoped STAFF grant must not make an ordinary employee a moderator.
+        { hrId: `SW-${sfx}`, corporateId: `SW-${sfx}`, email: `sw-${sfx}@puet.test`, fullNameUk: 'Працівник STEAM', position: 'Працівник ННЦ «STEAM-ХАБ»', orgUnitCodes: ['STEAM_HUB'], roles: [{ role: 'STAFF', orgUnitCode: 'STEAM_HUB' }] },
       ],
     });
     const student = (n: string, group: string, extra: Record<string, unknown> = {}) => ({
@@ -228,6 +231,8 @@ describe.skipIf(!enabled)('Phase 3 end-to-end (PostgreSQL)', () => {
     ids.P = (await prisma.user.findUniqueOrThrow({ where: { edeboId: `P-${sfx}` } })).id;
     ids.L = (await prisma.user.findUniqueOrThrow({ where: { hrId: `L-${sfx}` } })).id;
     ids.CP = (await prisma.user.findUniqueOrThrow({ where: { hrId: `CP-${sfx}` } })).id;
+    ids.SH = (await prisma.user.findUniqueOrThrow({ where: { hrId: `SH-${sfx}` } })).id;
+    ids.SW = (await prisma.user.findUniqueOrThrow({ where: { hrId: `SW-${sfx}` } })).id;
     const rector = await prisma.user.create({
       data: {
         tenantId: mainId,
@@ -241,7 +246,7 @@ describe.skipIf(!enabled)('Phase 3 end-to-end (PostgreSQL)', () => {
     });
     ids.R = rector.id;
 
-    for (const n of ['S1', 'S2', 'S3', 'L', 'CP']) await login(n, { sub: `sub-${n}-${sfx}`, email: `${n.toLowerCase()}-${sfx}@puet.test`, amr: ['pwd'] });
+    for (const n of ['S1', 'S2', 'S3', 'L', 'CP', 'SW']) await login(n, { sub: `sub-${n}-${sfx}`, email: `${n.toLowerCase()}-${sfx}@puet.test`, amr: ['pwd'] });
     await login('P', { sub: `sub-P-${sfx}`, email: `p-${sfx}@puet.test`, amr: ['pwd'] });
     await login('R', { sub: `sub-R-${sfx}`, email: `r-${sfx}@puet.test`, amr: ['pwd', 'otp'] });
     // The rector was granted in the admin panel, not by a sync: re-run provisioning.
@@ -274,6 +279,15 @@ describe.skipIf(!enabled)('Phase 3 end-to-end (PostgreSQL)', () => {
 
     const emergency = await prisma.channel.findUniqueOrThrow({ where: { provisionKey: `emergency:${mainId}` }, include: { members: { where: { userId: { in: [ids.S1!, ids.CP!] } } } } });
     expect(Object.fromEntries(emergency.members.map((m) => [m.userId, m.role]))).toEqual({ [ids.S1!]: 'READ_ONLY', [ids.CP!]: 'OWNER' });
+  });
+
+  it('privilege escalation: an ordinary employee (STAFF) uses the app but only the unit head moderates', async () => {
+    expect((await as('SW').get('/auth/me')).status).toBe(200);
+    const steam = await prisma.channel.findFirstOrThrow({
+      where: { orgUnit: { code: 'STEAM_HUB', tenantId: mainId } },
+      include: { members: { where: { userId: { in: [ids.SH!, ids.SW!] } } } },
+    });
+    expect(Object.fromEntries(steam.members.map((m) => [m.userId, m.role]))).toEqual({ [ids.SH!]: 'MODERATOR', [ids.SW!]: 'MEMBER' });
   });
 
   it('lists my channels with unread counters', async () => {
