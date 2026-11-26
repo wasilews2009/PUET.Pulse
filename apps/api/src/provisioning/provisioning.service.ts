@@ -325,7 +325,8 @@ export class ProvisioningService {
       },
     });
     const scoped = await db.roleAssignment.findMany({
-      where: { tenantId, orgUnitId: { not: null }, ...activeGrant(now), user: ACTIVE_HUMAN },
+      // An ordinary employee (STAFF) never moderates, even with a unit-scoped grant.
+      where: { tenantId, orgUnitId: { not: null }, role: { not: RoleCode.STAFF }, ...activeGrant(now), user: ACTIVE_HUMAN },
       select: { userId: true, orgUnitId: true },
     });
     const rectorate = await db.roleAssignment.findMany({

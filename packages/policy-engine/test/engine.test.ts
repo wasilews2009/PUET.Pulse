@@ -594,6 +594,16 @@ describe('calls and consultations (Phase 7)', () => {
     expect(engine.can(hr, Action.CONSULTATION_HOST, self('u-hr'), env())).toBe(false);
   });
 
+  it('privilege escalation: an ordinary employee (STAFF) signs in and chats but never hosts or moderates', () => {
+    const worker = principal({ userId: 'u-worker', kind: PrincipalKind.STAFF, roles: [{ role: RoleCode.STAFF, tenantId: T_MAIN }] });
+    const self = { type: ResourceType.SELF, tenantId: T_MAIN, ownerId: 'u-worker' };
+    expect(engine.can(worker, Action.SESSION_READ, { type: ResourceType.SESSION, tenantId: T_MAIN, ownerId: 'u-worker' }, env())).toBe(true);
+    const unit = channel({ channelType: ChannelType.PROJECT });
+    expect(engine.can(worker, Action.MESSAGE_SEND, unit, env())).toBe(true);
+    expect(engine.evaluate(worker, Action.CONSULTATION_HOST, self, env()).reason).toBe('rbac.denied');
+    expect(engine.evaluate(worker, Action.CHANNEL_MODERATE, unit, env()).reason).toBe('rbac.denied');
+  });
+
   it('booking follows the DM rules: a shared course is required for a lecturer', () => {
     expect(engine.can(student(), Action.CONSULTATION_BOOK, slot(), env())).toBe(true);
     const stranger = student({ activeCourseOfferingIds: ['co-civil-law'] });

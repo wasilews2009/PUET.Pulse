@@ -35,6 +35,8 @@ export const RoleCode = {
   FACILITIES_STAFF: 'FACILITIES_STAFF',
   /** 7. Dormitory commandant: the only role that sees room numbers. */
   DORM_COMMANDANT: 'DORM_COMMANDANT',
+  /** 7. Any other employee: chats, files, documents; no moderation, no consultations. */
+  STAFF: 'STAFF',
   /** 8. Students, lyceum pupils, postgraduates. */
   STUDENT: 'STUDENT',
   /** 8. Group leader (староста), on top of STUDENT. */
@@ -262,6 +264,7 @@ export const SYNC_ASSIGNABLE_ROLES: readonly RoleCode[] = [
   RoleCode.CIVIL_PROTECTION_OFFICER,
   RoleCode.FACILITIES_STAFF,
   RoleCode.DORM_COMMANDANT,
+  RoleCode.STAFF,
   RoleCode.STUDENT,
   RoleCode.GROUP_LEADER,
 ];
