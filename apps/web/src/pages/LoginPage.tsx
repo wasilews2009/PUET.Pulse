@@ -30,6 +30,7 @@ export function LoginPage() {
             <p className="body-6 text-muted">{t('login.subtitle')}</p>
           </div>
           {error === 'access_denied' && <InlineError>{t('login.denied')}</InlineError>}
+          {error === 'mfa_required' && <InlineError>{t('login.mfaRequired')}</InlineError>}
           {error === 'unavailable' && <InlineError>{t('login.unavailable')}</InlineError>}
           <a
             href={`${API_BASE}/auth/login?returnTo=${encodeURIComponent(returnTo)}`}

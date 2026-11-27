@@ -5,7 +5,7 @@ import { APP_CONFIG, type AppConfig } from '../config/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { PushService } from '../push/push.service';
 import { SESSION_STORE, sessionIdOf, type SessionStore } from '../session/session.store';
-import { idTokenProvesMfa, requiresMfa, safeReturnTo } from './mfa';
+import { describeAuthContext, idTokenProvesMfa, requiresMfa, safeReturnTo } from './mfa';
 import { OIDC_PROVIDER, oidcGenerators, type IdTokenClaims, type OidcProvider } from './oidc.service';
 import { PrincipalFactory } from './principal.factory';
 
@@ -14,7 +14,10 @@ const TX_TTL_MS = 10 * 60_000;
 export type CallbackResult =
   | { kind: 'session'; token: string; returnTo: string; mfaVerified: boolean }
   | { kind: 'step-up'; url: string }
-  | { kind: 'rejected'; reason: string };
+  | { kind: 'rejected'; reason: string; error: LoginError };
+
+/** What the login page may tell the person: one generic denial, plus "your role needs MFA" once the IdP has authenticated them. */
+export type LoginError = 'access_denied' | 'mfa_required';
 
 /**
  * SSO login. Accounts are created only by the ЄДЕБО / HR sync: an IdP identity
@@ -73,8 +76,11 @@ export class AuthService {
     const built = await this.principals.build(user.id, { mfaVerified });
     if (!built) return this.reject('auth.unknown_identity', meta);
 
-    if (!mfaVerified && requiresMfa(built.principal.roles) && !tx.stepUp) {
-      return { kind: 'step-up', url: await this.beginLogin(tx.returnTo, true) };
+    if (!mfaVerified && requiresMfa(built.principal.roles)) {
+      if (!tx.stepUp) return { kind: 'step-up', url: await this.beginLogin(tx.returnTo, true) };
+      // The step-up came back without a second factor: a session would be denied
+      // every action by the policy engine, and the client would loop back to login.
+      return this.reject(`auth.mfa_not_proven ${describeAuthContext(claims)}`, meta, user.id, 'mfa_required');
     }
 
     const now = Date.now();
@@ -139,6 +145,7 @@ export class AuthService {
     reason: string,
     meta: { ip?: string; userAgent?: string; requestId?: string },
     actorId?: string,
+    error: LoginError = 'access_denied',
   ): Promise<CallbackResult> {
     await this.audit.record({
       actorId: actorId ?? null,
@@ -149,6 +156,6 @@ export class AuthService {
       userAgent: meta.userAgent ?? null,
       requestId: meta.requestId ?? null,
     });
-    return { kind: 'rejected', reason };
+    return { kind: 'rejected', reason, error };
   }
 }
