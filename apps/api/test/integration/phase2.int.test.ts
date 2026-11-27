@@ -250,9 +250,15 @@ describe.skipIf(!enabled)('Phase 2 end-to-end (PostgreSQL)', () => {
 
   let adminCookie: string;
 
-  it('a SUPER_ADMIN without MFA is sent to step-up and stays locked out', async () => {
+  it('a SUPER_ADMIN without MFA is sent to step-up and, still without MFA, gets no session', async () => {
     const r = await login({ sub: `sub-admin-${sfx}`, amr: ['pwd'] });
-    expect((await http(`/admin/tenants/${mainId}/structure`, { cookie: r.cookie! })).status).toBe(403);
+    expect(r.cookie).toBeUndefined();
+    expect(r.location).toBe(`${WEB}/login?error=mfa_required`);
+    const denial = await prisma.auditLog.findFirstOrThrow({
+      where: { action: 'auth.login', actorId: adminId, outcome: 'DENIED' },
+      orderBy: { occurredAt: 'desc' },
+    });
+    expect(denial.reason).toBe('auth.mfa_not_proven acr=- amr=pwd');
   });
 
   it('a SUPER_ADMIN with MFA manages the structure', async () => {
