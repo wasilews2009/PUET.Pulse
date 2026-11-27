@@ -47,8 +47,9 @@ export class AuthController {
 
     if (result.kind === 'step-up') return res.redirect(302, result.url);
     if (result.kind === 'rejected') {
-      // Same message for every reason: no account enumeration.
-      return res.redirect(302, `${this.config.webOrigin}/login?error=access_denied`);
+      // One message for every identity problem (no account enumeration); only a person
+      // the IdP has already authenticated learns that their role needs a second factor.
+      return res.redirect(302, `${this.config.webOrigin}/login?error=${result.error}`);
     }
     res.cookie(this.sessions.cookieName(), result.token, {
       httpOnly: true,

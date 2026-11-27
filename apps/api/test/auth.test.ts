@@ -1,6 +1,6 @@
 import { RoleCode } from '@puet/shared';
 import { describe, expect, it } from 'vitest';
-import { idTokenProvesMfa, requiresMfa, safeReturnTo } from '../src/auth/mfa';
+import { describeAuthContext, idTokenProvesMfa, requiresMfa, safeReturnTo } from '../src/auth/mfa';
 import { sign, verifySignature } from '../src/integrations/hmac';
 import { computeIsMinor } from '../src/integrations/schemas';
 import { MemorySessionStore } from '../src/session/session.store';
@@ -65,6 +65,14 @@ describe('webhook HMAC signatures', () => {
     });
     expect(verifySignature({ secret, header: 'v1=abc', body, nowSeconds: now, toleranceSeconds: 300 }).ok).toBe(false);
     expect(verifySignature({ secret, header: undefined, body, nowSeconds: now, toleranceSeconds: 300 }).ok).toBe(false);
+  });
+});
+
+describe('auth context in the audit log', () => {
+  it('records acr / amr only, stripped to a safe alphabet (log injection)', () => {
+    expect(describeAuthContext({ acr: '1', amr: ['pwd'] })).toBe('acr=1 amr=pwd');
+    expect(describeAuthContext({})).toBe('acr=- amr=-');
+    expect(describeAuthContext({ acr: 'a b\nINJECT', amr: ['otp', 5, '<x>'] })).toBe('acr=abINJECT amr=otp,x');
   });
 });
 

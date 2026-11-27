@@ -17,6 +17,18 @@ export function idTokenProvesMfa(
   return false;
 }
 
+/**
+ * The authentication context of an ID token as a short, audit-safe string
+ * (`acr=1 amr=pwd`), so an IdP that does not report its second factor can be
+ * diagnosed from the audit log. Only claim values, never identities or tokens.
+ */
+export function describeAuthContext(claims: { acr?: unknown; amr?: unknown }): string {
+  const clean = (v: unknown) => (typeof v === 'string' ? v.replace(/[^A-Za-z0-9:._-]/g, '').slice(0, 32) : '');
+  const acr = clean(claims.acr) || '-';
+  const amr = Array.isArray(claims.amr) ? claims.amr.slice(0, 8).map(clean).filter(Boolean).join(',') : '';
+  return `acr=${acr} amr=${amr || '-'}`;
+}
+
 export function requiresMfa(grants: readonly RoleGrant[], now = new Date()): boolean {
   return grants.some(
     (g) => MFA_REQUIRED_ROLES.includes(g.role) && (!g.expiresAt || g.expiresAt.getTime() > now.getTime()),

@@ -39,6 +39,7 @@ export const en: Dictionary = {
     sso: 'Sign in with corporate SSO',
     mfaNote: 'Management, finance and HR staff sign in with two-factor authentication.',
     denied: 'Sign-in is not possible. Contact the IT Center if you think this is a mistake.',
+    mfaRequired: 'Your role requires two-factor authentication, but the sign-in used only a password. Contact the IT Center to turn on a verification code (TOTP).',
     unavailable: 'Sign-in is temporarily unavailable. Please try again in a few minutes.',
     privacy: 'Privacy policy',
     rules: 'PUET e-document rules',
